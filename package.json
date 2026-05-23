@@ -1,0 +1,18 @@
+{
+  "name": "rezio-bridge",
+  "version": "1.0.0",
+  "description": "Rezio → Echoss 會員中繼系統",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.6.0",
+    "exceljs": "^4.4.0",
+    "nodemailer": "^6.9.8",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  }
+}

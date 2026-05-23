@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>農遊生活 後台管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+TC:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0c0f;
+    --surface:   #111418;
+    --border:    #1e2530;
+    --border-hi: #2d3748;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --blue:      #3b82f6;
+    --blue-lo:   rgba(59,130,246,.12);
+    --amber:     #f59e0b;
+    --amber-lo:  rgba(245,158,11,.12);
+    --green:     #10b981;
+    --green-lo:  rgba(16,185,129,.12);
+    --purple:    #8b5cf6;
+    --purple-lo: rgba(139,92,246,.12);
+    --red:       #ef4444;
+    --red-lo:    rgba(239,68,68,.12);
+    --cyan:      #06b6d4;
+    --cyan-lo:   rgba(6,182,212,.12);
+    --mono:      'IBM Plex Mono', monospace;
+    --sans:      'IBM Plex Sans TC', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  .logo { font-family: var(--mono); font-size: 15px; font-weight: 600; letter-spacing: .06em; }
+  .logo span { color: var(--blue); }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .last-refresh { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 32px; }
+
+  /* ── STAT CARDS ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .2s;
+    cursor: default;
+  }
+  .stat-card:hover { border-color: var(--border-hi); }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .stat-card.blue::before   { background: var(--blue); }
+  .stat-card.amber::before  { background: var(--amber); }
+  .stat-card.green::before  { background: var(--green); }
+  .stat-card.purple::before { background: var(--purple); }
+  .stat-card.cyan::before   { background: var(--cyan); }
+
+  .stat-label { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+  .stat-value { font-family: var(--mono); font-size: 28px; font-weight: 600; line-height: 1; margin-bottom: 4px; }
+  .stat-card.blue   .stat-value { color: var(--blue); }
+  .stat-card.amber  .stat-value { color: var(--amber); }
+  .stat-card.green  .stat-value { color: var(--green); }
+  .stat-card.purple .stat-value { color: var(--purple); }
+  .stat-card.cyan   .stat-value { color: var(--cyan); }
+  .stat-sub { font-size: 11px; color: var(--muted); }
+
+  /* ── SECTION LABEL ── */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    margin-top: 28px;
+  }
+
+  /* ── ACTION PANEL ── */
+  .action-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 4px; }
+  .action-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+    transition: border-color .2s;
+  }
+  .action-card:hover { border-color: var(--border-hi); }
+  .action-card h3 { font-size: 13px; font-weight: 600; font-family: var(--mono); margin-bottom: 14px; letter-spacing: .03em; }
+  .action-row { display: flex; flex-direction: column; gap: 10px; }
+  .action-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .action-item-desc { font-size: 12px; color: var(--muted); flex: 1; }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 7px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all .15s;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-blue   { background: var(--blue);   color: #fff; }
+  .btn-blue:hover:not(:disabled)   { background: #2563eb; }
+  .btn-amber  { background: var(--amber);  color: #000; }
+  .btn-amber:hover:not(:disabled)  { background: #d97706; }
+  .btn-green  { background: var(--green);  color: #fff; }
+  .btn-green:hover:not(:disabled)  { background: #059669; }
+  .btn-purple { background: var(--purple); color: #fff; }
+  .btn-purple:hover:not(:disabled) { background: #7c3aed; }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover:not(:disabled) { border-color: var(--border-hi); color: var(--text); }
+  .btn-sm { padding: 6px 12px; font-size: 11px; }
+
+  /* ── FILTER TABS ── */
+  .filter-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+  }
+  .tab-btn {
+    padding: 10px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  /* ── TABLE ── */
+  .table-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 28px;
+  }
+  .table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .table-header h3 { font-size: 13px; font-weight: 500; font-family: var(--mono); letter-spacing: .04em; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .07em;
+    color: var(--muted);
+    text-transform: uppercase;
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,.2);
+  }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .td-mono   { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .td-name   { font-weight: 500; }
+  .td-email  { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .td-amount { font-family: var(--mono); color: var(--amber); text-align: right; }
+  .empty-row td { text-align: center; padding: 40px; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+
+  /* ── BADGES ── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .badge-blue   { background: var(--blue-lo);   color: var(--blue); }
+  .badge-amber  { background: var(--amber-lo);  color: var(--amber); }
+  .badge-green  { background: var(--green-lo);  color: var(--green); }
+  .badge-purple { background: var(--purple-lo); color: var(--purple); }
+  .badge-muted  { background: rgba(100,116,139,.1); color: var(--muted); }
+
+  /* ── PAGINATION ── */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+  }
+  .page-btn {
+    min-width: 30px;
+    height: 30px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    transition: all .15s;
+  }
+  .page-btn:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+  .page-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .page-btn:disabled { opacity: .3; cursor: not-allowed; }
+  .page-info { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 0 6px; }
+
+  /* ── TOAST ── */
+  #toast-container { position: fixed; bottom: 28px; right: 28px; display: flex; flex-direction: column; gap: 8px; z-index: 999; }
+  .toast {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 16px; border-radius: 8px;
+    font-family: var(--mono); font-size: 12px;
+    min-width: 280px; max-width: 400px;
+    animation: slideIn .2s ease; border: 1px solid;
+    line-height: 1.5;
+  }
+  .toast.success { background: var(--green-lo);  border-color: var(--green);  color: var(--green); }
+  .toast.error   { background: var(--red-lo);    border-color: var(--red);    color: var(--red); }
+  .toast.info    { background: var(--blue-lo);   border-color: var(--blue);   color: var(--blue); }
+  @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  .spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.2); border-top-color: currentColor; border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 1100px) {
+    .stats { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 800px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .action-panel { grid-template-columns: 1fr; }
+    main { padding: 20px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">農遊生活<span> / </span>後台管理</div>
+  <div class="header-right">
+    <span class="last-refresh" id="last-refresh">—</span>
+    <button class="btn btn-ghost btn-sm" onclick="loadStatus()">↻ 重新整理</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-card blue">
+      <div class="stat-label">待核銷</div>
+      <div class="stat-value" id="stat-pending">—</div>
+      <div class="stat-sub">已下單，尚未核銷</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-label">待複查</div>
+      <div class="stat-value" id="stat-review">—</div>
+      <div class="stat-sub">核銷後等待7天複查</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">已發點</div>
+      <div class="stat-value" id="stat-pointed">—</div>
+      <div class="stat-sub">點數已成功發出</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-label">已結案</div>
+      <div class="stat-value" id="stat-closed">—</div>
+      <div class="stat-sub">7天複查完成</div>
+    </div>
+    <div class="stat-card cyan">
+      <div class="stat-label">週報佇列</div>
+      <div class="stat-value" id="stat-queue">—</div>
+      <div class="stat-sub">等待寄出的週報B</div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="section-label">操作</div>
+  <div class="action-panel">
+    <div class="action-card">
+      <h3>每日同步</h3>
+      <div class="action-row">
+        <div class="action-item">
+          <span class="action-item-desc">同步今日新訂單、核銷記錄，並執行到期複查</span>
+          <button class="btn btn-blue" id="btn-daily-sync" onclick="doDailySync()">▶ 一鍵更新</button>
+        </div>
+        <div class="action-item">
+          <span class="action-item-desc">立即複查今日到期訂單，確認是否已入會並結案</span>
+          <button class="btn btn-amber" id="btn-check-expired" onclick="doCheckExpired()">↺ 7天複查</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-card">
+      <h3>週報發送</h3>
+      <div class="action-row">
+        <div class="action-item">
+          <span class="action-item-desc">週報A：上週下單但未加入會員的清單（供農遊主動聯繫）</span>
+          <button class="btn btn-green" id="btn-report-a" onclick="doSendReportA()">✉ 週報A</button>
+        </div>
+        <div class="action-item">
+          <span class="action-item-desc">週報B：核銷後7天仍未入會的結案清單（清空佇列）</span>
+          <button class="btn btn-purple" id="btn-report-b" onclick="doSendReportB()">✉ 週報B</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Orders Table -->
+  <div class="table-section">
+    <div class="table-header">
+      <h3>訂單列表</h3>
+      <span class="badge badge-blue" id="table-badge">載入中</span>
+    </div>
+
+    <div class="filter-tabs">
+      <button class="tab-btn active" id="tab-all"     onclick="setFilter(null)">全部</button>
+      <button class="tab-btn"        id="tab-pending" onclick="setFilter('待核銷')">待核銷</button>
+      <button class="tab-btn"        id="tab-review"  onclick="setFilter('待複查')">待複查</button>
+      <button class="tab-btn"        id="tab-pointed" onclick="setFilter('已發點')">已發點</button>
+      <button class="tab-btn"        id="tab-closed"  onclick="setFilter('已結案')">已結案</button>
+    </div>
+
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>姓名</th>
+            <th>手機</th>
+            <th>Email</th>
+            <th>訂單號</th>
+            <th>下單日期</th>
+            <th>核銷日期</th>
+            <th>複查截止</th>
+            <th style="text-align:right">金額</th>
+            <th>狀態</th>
+            <th>已發點</th>
+          </tr>
+        </thead>
+        <tbody id="orders-table-body">
+          <tr class="empty-row"><td colspan="10">載入中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+
+</main>
+
+<div id="toast-container"></div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────
+let currentPage   = 1
+let currentFilter = null
+
+// ── API ────────────────────────────────────────────────────────
+async function apiGet(params = {}) {
+  const qs  = new URLSearchParams(params).toString()
+  const res = await fetch(`/api/admin?${qs}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+async function apiPost(action, body = {}) {
+  const res = await fetch(`/api/admin?action=${action}`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+  return data
+}
+
+// ── LOAD ───────────────────────────────────────────────────────
+async function loadStatus(page = currentPage, filter = currentFilter) {
+  try {
+    const params = { action: 'status', page }
+    if (filter) params.statusFilter = filter
+    const data = await apiGet(params)
+    currentPage   = data.page
+    currentFilter = filter
+    renderStats(data)
+    renderTable(data.orders, data.totalOrders)
+    renderPagination(data.page, data.totalPages)
+    renderFilterTabs(filter, data.stats, data.weeklyQueueCount)
+    document.getElementById('last-refresh').textContent = '更新於 ' + new Date().toLocaleTimeString('zh-TW')
+  } catch (err) {
+    toast('載入失敗：' + err.message, 'error')
+  }
+}
+
+function renderStats(data) {
+  const s = data.stats || {}
+  document.getElementById('stat-pending').textContent = s.pending ?? '—'
+  document.getElementById('stat-review').textContent  = s.review  ?? '—'
+  document.getElementById('stat-pointed').textContent = s.pointed ?? '—'
+  document.getElementById('stat-closed').textContent  = s.closed  ?? '—'
+  document.getElementById('stat-queue').textContent   = data.weeklyQueueCount ?? '—'
+}
+
+function renderFilterTabs(activeFilter, stats, queueCount) {
+  const s = stats || {}
+  const tabs = [
+    { id: 'tab-all',     filter: null,     label: '全部' },
+    { id: 'tab-pending', filter: '待核銷', label: `待核銷 (${s.pending ?? 0})` },
+    { id: 'tab-review',  filter: '待複查', label: `待複查 (${s.review ?? 0})` },
+    { id: 'tab-pointed', filter: '已發點', label: `已發點 (${s.pointed ?? 0})` },
+    { id: 'tab-closed',  filter: '已結案', label: `已結案 (${s.closed ?? 0})` },
+  ]
+  tabs.forEach(({ id, filter, label }) => {
+    const el = document.getElementById(id)
+    if (!el) return
+    el.textContent = label
+    el.classList.toggle('active', filter === activeFilter)
+  })
+}
+
+function renderTable(orders, total) {
+  const tbody = document.getElementById('orders-table-body')
+  document.getElementById('table-badge').textContent = total > 0 ? `共 ${total} 筆` : '無資料'
+  document.getElementById('table-badge').className   = 'badge ' + (total > 0 ? 'badge-blue' : 'badge-muted')
+
+  if (!orders || orders.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">目前無訂單資料</td></tr>'
+    return
+  }
+
+  tbody.innerHTML = orders.map(r => `
+    <tr>
+      <td class="td-name">${esc(r.customer_name)}</td>
+      <td class="td-mono">${esc(r.phone) || '—'}</td>
+      <td class="td-email">${esc(r.email) || '—'}</td>
+      <td class="td-mono">${esc(r.order_no)}</td>
+      <td class="td-mono">${esc(r.order_date) || '—'}</td>
+      <td class="td-mono">${esc(r.redeem_date) || '—'}</td>
+      <td class="td-mono">${esc(r.check_due_date) || '—'}</td>
+      <td class="td-amount">NT$ ${Number(r.amount || 0).toLocaleString()}</td>
+      <td>${statusBadge(r.status)}</td>
+      <td>${pointsBadge(r.points_issued)}</td>
+    </tr>
+  `).join('')
+}
+
+function renderPagination(page, totalPages) {
+  const el = document.getElementById('pagination')
+  if (!totalPages || totalPages <= 1) { el.innerHTML = ''; return }
+
+  const pages = []
+  pages.push(`<button class="page-btn" onclick="loadStatus(${page-1}, currentFilter)" ${page<=1?'disabled':''}>‹</button>`)
+
+  for (const p of getPaginationRange(page, totalPages)) {
+    if (p === '...') {
+      pages.push(`<span class="page-info">…</span>`)
+    } else {
+      pages.push(`<button class="page-btn ${p===page?'active':''}" onclick="loadStatus(${p}, currentFilter)">${p}</button>`)
+    }
+  }
+
+  pages.push(`<button class="page-btn" onclick="loadStatus(${page+1}, currentFilter)" ${page>=totalPages?'disabled':''}>›</button>`)
+  pages.push(`<span class="page-info">${page} / ${totalPages} 頁</span>`)
+  el.innerHTML = pages.join('')
+}
+
+function getPaginationRange(cur, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  if (cur <= 4)         return [1, 2, 3, 4, 5, '...', total]
+  if (cur >= total - 3) return [1, '...', total-4, total-3, total-2, total-1, total]
+  return [1, '...', cur-1, cur, cur+1, '...', total]
+}
+
+function statusBadge(status) {
+  const map = {
+    '待核銷': 'badge-blue',
+    '待複查': 'badge-amber',
+    '已發點': 'badge-green',
+    '已結案': 'badge-purple',
+  }
+  return `<span class="badge ${map[status] || 'badge-muted'}">${esc(status) || '—'}</span>`
+}
+
+function pointsBadge(issued) {
+  if (issued === null || issued === undefined) return '<span style="color:var(--muted)">—</span>'
+  return issued
+    ? '<span style="color:var(--green);font-family:var(--mono);font-size:12px;">✓</span>'
+    : '<span style="color:var(--muted);font-family:var(--mono);font-size:12px;">—</span>'
+}
+
+// ── FILTER ─────────────────────────────────────────────────────
+function setFilter(filter) {
+  currentFilter = filter
+  currentPage   = 1
+  loadStatus(1, filter)
+}
+
+// ── ACTIONS ────────────────────────────────────────────────────
+async function doDailySync() {
+  const btn = setLoading('btn-daily-sync', '更新中...')
+  try {
+    const data = await apiPost('run-daily-sync')
+    const r    = data.result || {}
+    const o    = r.ordersResult  || {}
+    const rd   = r.redeemResult  || {}
+    const ex   = r.expiredResult || {}
+    const msg  = [
+      o.newOrders  > 0 ? `新增 ${o.newOrders} 筆訂單`   : '無新訂單',
+      rd.synced    > 0 ? `${rd.synced} 筆核銷已處理`      : '無核銷',
+      ex.checked   > 0 ? `複查 ${ex.checked} 筆到期訂單`  : '',
+    ].filter(Boolean).join('，')
+    toast(`更新完成：${msg}`, 'success')
+    await loadStatus()
+  } catch (err) {
+    toast('更新失敗：' + err.message, 'error')
+  } finally {
+    resetBtn(btn, '▶ 一鍵更新')
+  }
+}
+
+async function doCheckExpired() {
+  const btn = setLoading('btn-check-expired', '複查中...')
+  try {
+    const data = await apiPost('check-expired')
+    const r    = data.result || {}
+    toast(`複查完成：檢查 ${r.checked} 筆，已發點 ${r.memberCount}，加入週報 ${r.queuedCount}`, 'success')
+    await loadStatus()
+  } catch (err) {
+    toast('複查失敗：' + err.message, 'error')
+  } finally {
+    resetBtn(btn, '↺ 7天複查')
+  }
+}
+
+async function doSendReportA() {
+  if (!confirm('確定寄出週報A（上週下單未入會）？')) return
+  const btn = setLoading('btn-report-a', '寄送中...')
+  try {
+    const data = await apiPost('send-report-a')
+    toast(data.message || '週報A已寄出', 'success')
+  } catch (err) {
+    toast('週報A寄送失敗：' + err.message, 'error')
+  } finally {
+    resetBtn(btn, '✉ 週報A')
+  }
+}
+
+async function doSendReportB() {
+  const count = parseInt(document.getElementById('stat-queue').textContent) || 0
+  if (count === 0) { toast('週報B佇列為空，無需寄信', 'info'); return }
+  if (!confirm(`確定寄出週報B？\n共 ${count} 筆結案記錄將寄給農遊，寄出後佇列清空。`)) return
+  const btn = setLoading('btn-report-b', '寄送中...')
+  try {
+    const data = await apiPost('send-report-b')
+    toast(data.message || '週報B已寄出', 'success')
+    await loadStatus()
+  } catch (err) {
+    toast('週報B寄送失敗：' + err.message, 'error')
+  } finally {
+    resetBtn(btn, '✉ 週報B')
+  }
+}
+
+// ── HELPERS ────────────────────────────────────────────────────
+function setLoading(id, label) {
+  const btn = document.getElementById(id)
+  btn.disabled  = true
+  btn.innerHTML = `<span class="spinner"></span> ${label}`
+  return btn
+}
+function resetBtn(btn, label) {
+  btn.disabled  = false
+  btn.innerHTML = label
+}
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+}
+function toast(msg, type = 'info') {
+  const el = document.createElement('div')
+  el.className = `toast ${type}`
+  const icons = { success: '✓', error: '✕', info: 'ℹ' }
+  el.innerHTML = `<span style="flex-shrink:0">${icons[type]}</span><span>${msg}</span>`
+  document.getElementById('toast-container').appendChild(el)
+  setTimeout(() => el.remove(), 6000)
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+loadStatus(1, null)
+setInterval(() => loadStatus(currentPage, currentFilter), 60000)
+</script>
+</body>
+</html>
