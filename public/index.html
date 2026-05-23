@@ -361,6 +361,23 @@
     </div>
   </div>
 
+  <!-- Sync Range -->
+  <div class="section-label">補跑歷史資料</div>
+  <div class="action-card" style="margin-bottom:4px">
+    <h3>指定日期區間同步</h3>
+    <div class="action-row">
+      <div class="action-item">
+        <span class="action-item-desc">補跑 Rezio 歷史訂單與核銷，適合首次部署或停機後補資料</span>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          <input type="date" id="sync-from" style="font-family:var(--mono);font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;">
+          <span style="color:var(--muted);font-size:12px">～</span>
+          <input type="date" id="sync-to" style="font-family:var(--mono);font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;">
+          <button class="btn btn-blue" id="btn-sync-range" onclick="doSyncRange()">↓ 補跑</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Orders Table -->
   <div class="table-section">
     <div class="table-header">
@@ -583,6 +600,26 @@ async function doCheckExpired() {
     toast('複查失敗：' + err.message, 'error')
   } finally {
     resetBtn(btn, '↺ 7天複查')
+  }
+}
+
+async function doSyncRange() {
+  const from = document.getElementById('sync-from').value
+  const to   = document.getElementById('sync-to').value
+  if (!from || !to) { toast('請選擇起訖日期', 'error'); return }
+  if (from > to)    { toast('起始日期不能晚於結束日期', 'error'); return }
+  if (!confirm(`確定補跑 ${from} ～ ${to} 的訂單與核銷資料？\n資料量大時可能需要較長時間。`)) return
+  const btn = setLoading('btn-sync-range', '補跑中...')
+  try {
+    const data = await apiPost('sync-range', { from, to })
+    const o = data.ordersResult || {}
+    const r = data.redeemResult || {}
+    toast(`補跑完成（${from} ～ ${to}）：新增 ${o.newOrders ?? 0} 筆訂單，處理 ${r.synced ?? 0} 筆核銷`, 'success')
+    await loadStatus()
+  } catch (err) {
+    toast('補跑失敗：' + err.message, 'error')
+  } finally {
+    resetBtn(btn, '↓ 補跑')
   }
 }
 
