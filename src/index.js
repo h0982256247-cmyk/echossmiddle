@@ -1,7 +1,7 @@
 require('dotenv').config()
 const express = require('express')
 const path = require('path')
-const { runDailySync, syncNewOrders, syncRedemptions, checkExpiredOrders, processInBatches } = require('./jobs/dailySync')
+const { runDailySync, syncNewOrders, syncRedemptions, checkExpiredOrders, processInBatches, syncRangeWithRedemptionCheck } = require('./jobs/dailySync')
 const echoss = require('./services/echoss')
 const db = require('./services/db')
 const { generateReport } = require('./utils/report')
@@ -136,16 +136,13 @@ app.post('/api/admin', async (req, res) => {
     }
   }
 
-  // 補跑歷史區間：同步指定日期範圍的訂單 + 核銷
+  // 補跑歷史區間：先同步指定區間的訂單，再確認這批訂單截至今天的核銷狀態
   if (action === 'sync-range') {
     try {
       const { from, to } = req.body
       if (!from || !to) return res.status(400).json({ ok: false, error: '請提供 from 與 to 日期（YYYY-MM-DD）' })
       if (from > to)    return res.status(400).json({ ok: false, error: 'from 不能晚於 to' })
-      const [ordersResult, redeemResult] = await Promise.all([
-        syncNewOrders(from, to),
-        syncRedemptions(from, to),
-      ])
+      const { ordersResult, redeemResult } = await syncRangeWithRedemptionCheck(from, to)
       return res.json({ ok: true, from, to, ordersResult, redeemResult })
     } catch (err) {
       console.error('[sync-range]', err)

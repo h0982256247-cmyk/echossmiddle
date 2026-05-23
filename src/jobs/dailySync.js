@@ -239,4 +239,99 @@ async function runDailySync() {
   return { ordersResult, redeemResult, expiredResult }
 }
 
-module.exports = { runDailySync, syncNewOrders, syncRedemptions, checkExpiredOrders, processInBatches }
+// ── 補跑專用：先同步訂單，再查這批訂單的核銷狀態 ─────────────
+
+/**
+ * 補跑指定日期區間的訂單，並查詢這些訂單截至今天的核銷狀態
+ * - 只處理 DB 中存在的訂單（即區間內下單的），不自動建立區間外訂單
+ * - 核銷查詢擴展至今天，涵蓋「下單後才核銷」的情況
+ */
+async function syncRangeWithRedemptionCheck(fromDate, toDate) {
+  const today = getTodayDateString()
+
+  // 第一步：同步區間內的訂單
+  const ordersResult = await syncNewOrders(fromDate, toDate)
+
+  // 第二步：查詢 Rezio 核銷紀錄（核銷日期從 from 到今天）
+  console.log(`[sync-range-redeem] 查詢核銷 from=${fromDate} to=${today}`)
+  const allRedemptions = await rezio.getRedemptions(fromDate, today)
+  const unique = Array.from(new Map(allRedemptions.map(r => [r.orderNo, r])).values())
+  console.log(`[sync-range-redeem] 核銷紀錄共 ${unique.length} 筆`)
+
+  let memberCount = 0
+  let notifiedCount = 0
+  let skippedCount = 0
+
+  const results = await processInBatches(unique, async (record) => {
+    const { orderNo, redeemDate } = record
+    const actualRedeemDate = redeemDate || today
+    try {
+      // 只處理 DB 裡已有的訂單（即區間內的訂單），不自動建立區間外訂單
+      const order = await db.getOrder(orderNo)
+      if (!order) {
+        console.log(`[sync-range-redeem] 跳過（不在補跑區間內）: ${orderNo}`)
+        skippedCount++
+        return null
+      }
+
+      // 已處理過的核銷跳過
+      if (order.redeem_date && order.is_member_at_redeem !== null) {
+        return null
+      }
+
+      if (!order.phone) {
+        await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: null, status: '待複查' })
+        return null
+      }
+
+      const { isMember } = await echoss.isMember(order.phone)
+
+      if (isMember) {
+        await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: true, status: '已發點' })
+        await issuePoints(order.phone, order.amount)
+        await db.markPointsIssued(orderNo)
+        console.log(`[sync-range-redeem] 已入會，已發點: ${orderNo}`)
+        return 'member'
+      } else {
+        const checkDueDate = addDays(actualRedeemDate, 7)
+        await db.setRedeemed({
+          orderNo,
+          redeemDate:       actualRedeemDate,
+          isMember:         false,
+          checkDueDate,
+          customerNotified: false,
+          status:           '待複查',
+        })
+        if (order.email) {
+          try {
+            await sendCustomerNotification({
+              email:        order.email,
+              customerName: order.customer_name,
+              orderNo,
+              redeemDate:   actualRedeemDate,
+              amount:       order.amount,
+            })
+            await db.setCustomerNotified(orderNo)
+          } catch (mailErr) {
+            console.error(`[sync-range-redeem] 發信失敗 ${orderNo}:`, mailErr.message)
+          }
+        }
+        return 'notified'
+      }
+    } catch (err) {
+      console.error(`[sync-range-redeem] 處理失敗 ${orderNo}:`, err.message)
+      return null
+    }
+  })
+
+  memberCount   = results.filter(r => r === 'member').length
+  notifiedCount = results.filter(r => r === 'notified').length
+  console.log(`[sync-range-redeem] 完成 已入會:${memberCount} 待複查:${notifiedCount} 跳過:${skippedCount}`)
+
+  return {
+    ordersResult,
+    redeemResult: { synced: unique.length, memberCount, notifiedCount, skipped: skippedCount },
+  }
+}
+
+module.exports = { runDailySync, syncNewOrders, syncRedemptions, checkExpiredOrders, processInBatches, syncRangeWithRedemptionCheck }
