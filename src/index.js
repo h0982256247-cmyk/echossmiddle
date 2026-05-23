@@ -26,10 +26,6 @@ app.options('/api/admin', (req, res) => { setCors(res); res.sendStatus(200) })
 async function runReportA() {
   const { from, to } = getLastWeekRange()
   const orders = await db.getOrdersInDateRange(from, to)
-  if (orders.length === 0) {
-    return { skipped: true, message: `上週（${from} ~ ${to}）無訂單` }
-  }
-
   const ordersWithPhone = orders.filter(o => o.phone)
   const results = await processInBatches(ordersWithPhone, async (order) => {
     const { isMember } = await echoss.isMember(order.phone)
@@ -37,12 +33,8 @@ async function runReportA() {
   })
   const nonMembers = results.filter(Boolean)
 
-  if (nonMembers.length === 0) {
-    return { skipped: true, message: '上週訂單全數已入會，無需寄送週報A' }
-  }
-
   const periodLabel = `${from} ~ ${to}`
-  const excelBuffer = await generateReport(nonMembers, periodLabel)
+  const excelBuffer = nonMembers.length > 0 ? await generateReport(nonMembers, periodLabel) : null
   await sendReportA(excelBuffer, nonMembers.length, periodLabel)
   console.log(`[report-a] 已寄出，共 ${nonMembers.length} 筆，期間 ${periodLabel}`)
   return { skipped: false, message: `週報A已寄出，共 ${nonMembers.length} 筆`, count: nonMembers.length }
@@ -50,13 +42,10 @@ async function runReportA() {
 
 async function runReportB() {
   const records = await db.getWeeklyQueue()
-  if (records.length === 0) {
-    return { skipped: true, message: '週報B佇列為空，無需寄信' }
-  }
 
   const dates       = records.map(r => r.redeem_date).filter(Boolean).sort()
   const periodLabel = dates.length ? `${dates[0]} ~ ${dates[dates.length - 1]}` : new Date().toISOString().slice(0, 10)
-  const excelBuffer = await generateReport(records, periodLabel)
+  const excelBuffer = records.length > 0 ? await generateReport(records, periodLabel) : null
   await sendReportB(excelBuffer, records.length, periodLabel)
   await db.clearWeeklyQueue()
   await db.updateLastSentAt()

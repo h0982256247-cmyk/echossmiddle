@@ -64,10 +64,9 @@ async function sendCustomerNotification({ email, customerName, orderNo, redeemDa
 async function sendReportB(excelBuffer, count, periodLabel) {
   const subject = `【週報B｜核銷未入會】${periodLabel} 共 ${count} 筆`
 
-  const html = `
-    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #7c3aed;">核銷未入會週報</h2>
-      <p>以下是 <strong>${periodLabel}</strong> 期間，核銷後 7 天仍未加入會員的消費者名單：</p>
+  const bodyContent = count === 0
+    ? `<p style="color: #6b7280;">本週無資料（佇列中無待處理訂單）。</p>`
+    : `
       <table style="border-collapse: collapse; width: 100%; font-size: 14px;">
         <tr style="background: #7c3aed; color: white;">
           <th style="padding: 8px 12px; text-align: left;">統計</th>
@@ -78,22 +77,25 @@ async function sendReportB(excelBuffer, count, periodLabel) {
           <td style="padding: 8px 12px; text-align: right;"><strong>${count} 筆</strong></td>
         </tr>
       </table>
-      <p style="margin-top: 16px; color: #6b7280; font-size: 13px;">詳細名單請見附件 Excel 檔案。</p>
+      <p style="margin-top: 16px; color: #6b7280; font-size: 13px;">詳細名單請見附件 Excel 檔案。</p>`
+
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #7c3aed;">核銷未入會週報</h2>
+      <p>以下是 <strong>${periodLabel}</strong> 期間，核銷後 7 天仍未加入會員的消費者名單：</p>
+      ${bodyContent}
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
       <p style="color: #9ca3af; font-size: 12px;">此信由 rezio-bridge 系統自動發送，請勿直接回覆。</p>
     </div>
   `
 
-  await sendMail({
-    to: process.env.REPORT_TO,
-    subject,
-    html,
-    attachments: [{
-      filename: `核銷未入會_${periodLabel.replace(/ /g, '').replace('~', '-')}.xlsx`,
-      content:  excelBuffer,
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    }],
-  })
+  const attachments = excelBuffer ? [{
+    filename: `核銷未入會_${periodLabel.replace(/ /g, '').replace('~', '-')}.xlsx`,
+    content:  excelBuffer,
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  }] : []
+
+  await sendMail({ to: process.env.REPORT_TO, subject, html, attachments })
 }
 
 /**
@@ -102,10 +104,9 @@ async function sendReportB(excelBuffer, count, periodLabel) {
 async function sendReportA(excelBuffer, count, periodLabel) {
   const subject = `【週報A｜下單未入會】${periodLabel} 共 ${count} 筆`
 
-  const html = `
-    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0891b2;">下單未入會週報</h2>
-      <p>以下是 <strong>${periodLabel}</strong> 期間，已下單但尚未加入會員的消費者名單，請主動聯繫招攬：</p>
+  const bodyContent = count === 0
+    ? `<p style="color: #6b7280;">本週無資料（上週訂單皆已入會或無訂單）。</p>`
+    : `
       <table style="border-collapse: collapse; width: 100%; font-size: 14px;">
         <tr style="background: #0891b2; color: white;">
           <th style="padding: 8px 12px; text-align: left;">統計</th>
@@ -116,22 +117,25 @@ async function sendReportA(excelBuffer, count, periodLabel) {
           <td style="padding: 8px 12px; text-align: right;"><strong>${count} 筆</strong></td>
         </tr>
       </table>
-      <p style="margin-top: 16px; color: #6b7280; font-size: 13px;">詳細名單請見附件 Excel 檔案。</p>
+      <p style="margin-top: 16px; color: #6b7280; font-size: 13px;">詳細名單請見附件 Excel 檔案。</p>`
+
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #0891b2;">下單未入會週報</h2>
+      <p>以下是 <strong>${periodLabel}</strong> 期間，已下單但尚未加入會員的消費者名單，請主動聯繫招攬：</p>
+      ${bodyContent}
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
       <p style="color: #9ca3af; font-size: 12px;">此信由 rezio-bridge 系統自動發送，請勿直接回覆。</p>
     </div>
   `
 
-  await sendMail({
-    to: process.env.REPORT_TO,
-    subject,
-    html,
-    attachments: [{
-      filename: `下單未入會_${periodLabel.replace(/ /g, '').replace('~', '-')}.xlsx`,
-      content:  excelBuffer,
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    }],
-  })
+  const attachments = excelBuffer ? [{
+    filename: `下單未入會_${periodLabel.replace(/ /g, '').replace('~', '-')}.xlsx`,
+    content:  excelBuffer,
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  }] : []
+
+  await sendMail({ to: process.env.REPORT_TO, subject, html, attachments })
 }
 
 function esc(s) {
