@@ -12,11 +12,20 @@ const transporter = nodemailer.createTransport({
 })
 
 async function sendMail({ to, cc, subject, html, attachments }) {
+  const isTestMode = process.env.TEST_MODE === 'true'
+  const actualTo   = isTestMode ? process.env.REPORT_TO : to
+  const actualCc   = isTestMode ? undefined : cc
+  const actualSubj = isTestMode ? `[TEST] ${subject}` : subject
+
+  if (isTestMode) {
+    console.log(`[mailer] TEST_MODE 攔截，原收件人: ${to}${cc ? ` cc:${cc}` : ''} → 改寄 ${actualTo}`)
+  }
+
   await transporter.sendMail({
     from: `"農遊生活" <${process.env.GMAIL_USER}>`,
-    to,
-    ...(cc ? { cc } : {}),
-    subject,
+    to:   actualTo,
+    ...(actualCc ? { cc: actualCc } : {}),
+    subject: actualSubj,
     html,
     attachments,
   })
