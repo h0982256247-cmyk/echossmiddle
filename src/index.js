@@ -6,6 +6,7 @@ const echoss = require('./services/echoss')
 const db = require('./services/db')
 const { generateReport } = require('./utils/report')
 const { sendReportA, sendReportB } = require('./utils/mailer')
+const { getTestMode, setTestMode } = require('./utils/config')
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -111,6 +112,7 @@ app.get('/api/admin', async (req, res) => {
         weeklyQueueCount: queueCount,
         lastSentAt:  lastSentAt?.toISOString() || null,
         now:         new Date().toISOString(),
+        testMode:    getTestMode(),
       })
     } catch (err) {
       return res.status(500).json({ error: err.message })
@@ -181,6 +183,13 @@ app.post('/api/admin', async (req, res) => {
       console.error('[send-report-a]', err)
       return res.status(500).json({ ok: false, error: err.message })
     }
+  }
+
+  // 測試模式開關
+  if (action === 'toggle-test-mode') {
+    const enabled = typeof req.body?.enabled === 'boolean' ? req.body.enabled : !getTestMode()
+    setTestMode(enabled)
+    return res.json({ ok: true, testMode: getTestMode() })
   }
 
   return res.status(404).json({ error: 'Not Found' })

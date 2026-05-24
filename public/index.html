@@ -278,6 +278,57 @@
   .spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.2); border-top-color: currentColor; border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; flex-shrink: 0; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── TEST MODE TOGGLE ── */
+  .test-mode-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px 5px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    user-select: none;
+  }
+  .test-mode-wrap:hover { border-color: var(--border-hi); }
+  .test-mode-wrap.active {
+    border-color: var(--amber);
+    background: var(--amber-lo);
+  }
+  .test-mode-text {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .07em;
+    color: var(--muted);
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: color .15s;
+  }
+  .test-mode-wrap.active .test-mode-text { color: var(--amber); }
+  .toggle-track {
+    width: 32px;
+    height: 18px;
+    border-radius: 9px;
+    background: var(--border-hi);
+    position: relative;
+    transition: background .2s;
+    flex-shrink: 0;
+  }
+  .test-mode-wrap.active .toggle-track { background: var(--amber); }
+  .toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform .2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  }
+  .test-mode-wrap.active .toggle-knob { transform: translateX(14px); }
+
   /* ── DATE RANGE ── */
   .date-range-row {
     display: flex;
@@ -358,6 +409,12 @@
 <header>
   <div class="logo">農遊生活<span> / </span>後台管理</div>
   <div class="header-right">
+    <div class="test-mode-wrap" id="test-mode-wrap" onclick="toggleTestMode()" title="開啟後所有信件只寄給自己，不寄給消費者">
+      <span class="test-mode-text" id="test-mode-text">Test Mode</span>
+      <div class="toggle-track">
+        <div class="toggle-knob"></div>
+      </div>
+    </div>
     <span class="last-refresh" id="last-refresh">—</span>
     <button class="btn btn-ghost btn-sm" onclick="loadStatus()">↻ 重新整理</button>
   </div>
@@ -537,6 +594,15 @@ function renderStats(data) {
   document.getElementById('stat-pointed').textContent = s.pointed ?? '—'
   document.getElementById('stat-closed').textContent  = s.closed  ?? '—'
   document.getElementById('stat-queue').textContent   = data.weeklyQueueCount ?? '—'
+  renderTestModeToggle(data.testMode)
+}
+
+function renderTestModeToggle(enabled) {
+  const wrap = document.getElementById('test-mode-wrap')
+  const text = document.getElementById('test-mode-text')
+  if (!wrap) return
+  wrap.classList.toggle('active', !!enabled)
+  text.textContent = enabled ? 'Test Mode ON' : 'Test Mode'
 }
 
 function renderFilterTabs(activeFilter, stats, queueCount) {
@@ -624,6 +690,21 @@ function pointsBadge(issued) {
   return issued
     ? '<span style="color:var(--green);font-family:var(--mono);font-size:12px;">✓</span>'
     : '<span style="color:var(--muted);font-family:var(--mono);font-size:12px;">—</span>'
+}
+
+// ── TEST MODE ──────────────────────────────────────────────────
+async function toggleTestMode() {
+  try {
+    const wrap    = document.getElementById('test-mode-wrap')
+    const current = wrap.classList.contains('active')
+    const data    = await apiPost('toggle-test-mode', { enabled: !current })
+    renderTestModeToggle(data.testMode)
+    toast(data.testMode
+      ? '🟡 Test Mode 開啟：信件只寄給自己'
+      : '🟢 Test Mode 關閉：恢復正常寄送', 'info')
+  } catch (err) {
+    toast('切換失敗：' + err.message, 'error')
+  }
 }
 
 // ── FILTER ─────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer')
+const { getTestMode } = require('./config')
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -12,7 +13,7 @@ const transporter = nodemailer.createTransport({
 })
 
 async function sendMail({ to, cc, subject, html, attachments }) {
-  const isTestMode = process.env.TEST_MODE === 'true'
+  const isTestMode = getTestMode()
   const actualTo   = isTestMode ? process.env.REPORT_TO : to
   const actualCc   = isTestMode ? undefined : cc
   const actualSubj = isTestMode ? `[TEST] ${subject}` : subject
