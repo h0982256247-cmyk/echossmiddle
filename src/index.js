@@ -1,6 +1,7 @@
 require('dotenv').config()
 const express = require('express')
-const path = require('path')
+const path    = require('path')
+const crypto  = require('crypto')
 const { runDailySync, syncNewOrders, syncRedemptions, checkExpiredOrders, processInBatches, syncRangeWithRedemptionCheck } = require('./jobs/dailySync')
 const echoss = require('./services/echoss')
 const db = require('./services/db')
@@ -17,10 +18,34 @@ app.use(express.static(path.join(__dirname, '../public')))
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Admin-Token')
 }
 
 app.options('/api/admin', (req, res) => { setCors(res); res.sendStatus(200) })
+
+// ── Admin token 工具 ─────────────────────────────────────────
+function getAdminToken() {
+  if (!process.env.ADMIN_PASSWORD) return null
+  return crypto.createHmac('sha256', process.env.ADMIN_PASSWORD).update('admin').digest('hex')
+}
+
+function validateAdminToken(req) {
+  if (!process.env.ADMIN_PASSWORD) return true          // 未設密碼時全放行
+  return req.headers['x-admin-token'] === getAdminToken()
+}
+
+// ── POST /api/login ───────────────────────────────────────────
+app.post('/api/login', (req, res) => {
+  setCors(res)
+  const { password } = req.body || {}
+  if (!process.env.ADMIN_PASSWORD) {
+    return res.json({ ok: true, token: 'no-auth' })
+  }
+  if (password === process.env.ADMIN_PASSWORD) {
+    return res.json({ ok: true, token: getAdminToken() })
+  }
+  return res.status(401).json({ ok: false, error: '密碼錯誤' })
+})
 
 // ── 週報邏輯（手動按鈕 & 自動排程共用）──────────────────────────
 
@@ -87,6 +112,7 @@ app.post('/api/run-weekly', (req, res) => {
 // ── GET /api/admin?action=status ───────────────────────────────
 app.get('/api/admin', async (req, res) => {
   setCors(res)
+  if (!validateAdminToken(req)) return res.status(401).json({ error: 'Unauthorized' })
   const { action } = req.query
 
   if (action === 'status') {
@@ -125,6 +151,7 @@ app.get('/api/admin', async (req, res) => {
 // ── POST /api/admin?action=... ─────────────────────────────────
 app.post('/api/admin', async (req, res) => {
   setCors(res)
+  if (!validateAdminToken(req)) return res.status(401).json({ error: 'Unauthorized' })
   const { action } = req.query
 
   // 一鍵更新：同步今日訂單 + 核銷 + 7天複查

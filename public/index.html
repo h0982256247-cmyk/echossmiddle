@@ -402,9 +402,85 @@
     .date-range-row { gap: 8px; }
     .date-input { min-width: 140px; }
   }
+  /* ── LOGIN PAGE ── */
+  #login-page {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  #login-page.hidden { display: none; }
+  .login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 40px 44px;
+    width: 100%; max-width: 380px;
+    display: flex; flex-direction: column; gap: 24px;
+  }
+  .login-logo {
+    font-family: var(--mono); font-size: 16px; font-weight: 600;
+    letter-spacing: .06em; text-align: center;
+  }
+  .login-logo span { color: var(--blue); }
+  .login-subtitle {
+    font-size: 12px; color: var(--muted);
+    text-align: center; margin-top: -16px;
+    font-family: var(--mono); letter-spacing: .04em;
+  }
+  .login-field { display: flex; flex-direction: column; gap: 8px; }
+  .login-label {
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: .08em; color: var(--muted); text-transform: uppercase;
+  }
+  .login-input {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 11px 14px; font-family: var(--mono); font-size: 14px;
+    outline: none; transition: border-color .15s, box-shadow .15s;
+    width: 100%;
+  }
+  .login-input:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px var(--blue-lo);
+  }
+  .login-input::placeholder { color: var(--muted); opacity: .5; }
+  .btn-login {
+    width: 100%; padding: 12px; font-size: 13px;
+    justify-content: center; border-radius: 8px;
+    background: var(--blue); color: #fff;
+    font-family: var(--mono); font-weight: 600; letter-spacing: .04em;
+    cursor: pointer; border: none; transition: background .15s;
+  }
+  .btn-login:hover:not(:disabled) { background: #2563eb; }
+  .btn-login:disabled { opacity: .4; cursor: not-allowed; }
+  .login-error {
+    font-family: var(--mono); font-size: 12px; color: var(--red);
+    text-align: center; min-height: 18px;
+  }
 </style>
 </head>
 <body>
+
+<!-- ── LOGIN PAGE ── -->
+<div id="login-page">
+  <div class="login-card">
+    <div>
+      <div class="login-logo">農遊生活<span> / </span>後台管理</div>
+      <div class="login-subtitle">Admin Dashboard</div>
+    </div>
+    <div class="login-field">
+      <label class="login-label" for="login-password">密碼</label>
+      <input type="password" id="login-password" class="login-input"
+             placeholder="請輸入管理密碼"
+             onkeydown="if(event.key==='Enter') doLogin()">
+    </div>
+    <div>
+      <button class="btn btn-login" id="btn-login" onclick="doLogin()">登入</button>
+      <div class="login-error" id="login-error"></div>
+    </div>
+  </div>
+</div>
 
 <header>
   <div class="logo">農遊生活<span> / </span>後台管理</div>
@@ -550,10 +626,61 @@
 let currentPage   = 1
 let currentFilter = null
 
+// ── AUTH ───────────────────────────────────────────────────────
+const TOKEN_KEY = 'admin_token'
+
+function getToken() { return sessionStorage.getItem(TOKEN_KEY) }
+function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t) }
+function clearToken() { sessionStorage.removeItem(TOKEN_KEY) }
+
+async function doLogin() {
+  const password = document.getElementById('login-password').value
+  const errEl    = document.getElementById('login-error')
+  const btn      = document.getElementById('btn-login')
+  if (!password) { errEl.textContent = '請輸入密碼'; return }
+
+  btn.disabled  = true
+  btn.innerHTML = '<span class="spinner"></span> 登入中...'
+  errEl.textContent = ''
+
+  try {
+    const res  = await fetch('/api/login', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ password }),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      setToken(data.token)
+      document.getElementById('login-page').classList.add('hidden')
+      loadStatus()
+    } else {
+      errEl.textContent = data.error || '登入失敗'
+    }
+  } catch {
+    errEl.textContent = '連線失敗，請稍後再試'
+  } finally {
+    btn.disabled  = false
+    btn.innerHTML = '登入'
+  }
+}
+
+function checkAuth() {
+  const token = getToken()
+  if (token) {
+    document.getElementById('login-page').classList.add('hidden')
+    return true
+  }
+  return false
+}
+
 // ── API ────────────────────────────────────────────────────────
 async function apiGet(params = {}) {
   const qs  = new URLSearchParams(params).toString()
-  const res = await fetch(`/api/admin?${qs}`)
+  const res = await fetch(`/api/admin?${qs}`, {
+    headers: { 'X-Admin-Token': getToken() || '' }
+  })
+  if (res.status === 401) { clearToken(); location.reload(); return }
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
@@ -561,10 +688,14 @@ async function apiGet(params = {}) {
 async function apiPost(action, body = {}) {
   const res = await fetch(`/api/admin?action=${action}`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+    headers: {
+      'Content-Type':  'application/json',
+      'X-Admin-Token': getToken() || '',
+    },
+    body: JSON.stringify(body),
   })
   const data = await res.json().catch(() => ({}))
+  if (res.status === 401) { clearToken(); location.reload(); return }
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
   return data
 }
@@ -825,8 +956,10 @@ function toast(msg, type = 'info') {
 }
 
 // ── INIT ──────────────────────────────────────────────────────
-loadStatus(1, null)
-setInterval(() => loadStatus(currentPage, currentFilter), 60000)
+if (checkAuth()) {
+  loadStatus(1, null)
+  setInterval(() => loadStatus(currentPage, currentFilter), 60000)
+}
 </script>
 </body>
 </html>
