@@ -96,6 +96,7 @@ async function getAllOrders(page = 1, pageSize = 50, statusFilter = null) {
   let query = supabase
     .from('orders')
     .select('*', { count: 'exact' })
+    .order('order_date', { ascending: false })
     .order('created_at', { ascending: false })
     .range(from, to)
 
