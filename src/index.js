@@ -1,7 +1,7 @@
 require('dotenv').config()
 const express = require('express')
 const path    = require('path')
-const { runDailySync, syncNewOrders, syncRedemptions, checkExpiredOrders, processInBatches, syncRangeWithRedemptionCheck } = require('./jobs/dailySync')
+const { runDailySync, checkExpiredOrders, processInBatches, syncRangeWithRedemptionCheck } = require('./jobs/dailySync')
 const echoss = require('./services/echoss')
 const db = require('./services/db')
 const { generateReport } = require('./utils/report')

@@ -1039,8 +1039,8 @@ async function doSendReportA() {
 
 async function doSendReportB() {
   const count = parseInt(document.getElementById('stat-queue').textContent) || 0
-  if (count === 0) { toast('週報B佇列為空，無需寄信', 'info'); return }
-  if (!confirm(`確定寄出週報B？\n共 ${count} 筆結案記錄將寄給農遊，寄出後佇列清空。`)) return
+  const msg   = count > 0 ? `共 ${count} 筆結案記錄將寄給農遊，寄出後佇列清空。` : '佇列目前為空，仍將寄出空白週報。'
+  if (!confirm(`確定寄出週報B？\n${msg}`)) return
   const btn = setLoading('btn-report-b', '寄送中...')
   try {
     const data = await apiPost('send-report-b')
