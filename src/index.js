@@ -38,7 +38,7 @@ app.post('/api/login', async (req, res) => {
     console.log(`[login] ${email} 登入成功`)
     return res.json({ ok: true, token })
   } catch (err) {
-    return res.status(401).json({ ok: false, error: '帳號或密碼錯誤' })
+    return res.status(401).json({ ok: false, error: err.message || '帳號或密碼錯誤' })
   }
 })
 

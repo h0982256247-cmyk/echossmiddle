@@ -202,6 +202,7 @@ async function updateLastSentAt() {
 async function authSignIn(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) throw new Error(error.message)
+  if (!data.session) throw new Error('Email 尚未驗證，請先至信箱確認後再登入，或至 Supabase Dashboard 關閉 Email Confirmation')
   return data.session.access_token
 }
 
