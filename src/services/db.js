@@ -1,8 +1,16 @@
 const { createClient } = require('@supabase/supabase-js')
 
+// DB 操作專用（service role，bypass RLS）
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
+)
+
+// Auth 驗證專用（獨立實例，避免污染 DB client 的 auth 狀態）
+const supabaseAuth = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY,
+  { auth: { persistSession: false, autoRefreshToken: false } }
 )
 
 // ── Orders ─────────────────────────────────────────────────────
@@ -200,7 +208,7 @@ async function updateLastSentAt() {
 // ── Supabase Auth ─────────────────────────────────────────────
 
 async function authSignIn(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  const { data, error } = await supabaseAuth.auth.signInWithPassword({ email, password })
   if (error) throw new Error(error.message)
   if (!data.session) throw new Error('Email 尚未驗證，請先至信箱確認後再登入，或至 Supabase Dashboard 關閉 Email Confirmation')
   return data.session.access_token
@@ -209,7 +217,7 @@ async function authSignIn(email, password) {
 async function validateAuthToken(token) {
   if (!token) return false
   try {
-    const { data: { user }, error } = await supabase.auth.getUser(token)
+    const { data: { user }, error } = await supabaseAuth.auth.getUser(token)
     return !error && !!user
   } catch {
     return false
