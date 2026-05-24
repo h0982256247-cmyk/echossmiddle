@@ -2,6 +2,7 @@ require('dotenv').config()
 const express = require('express')
 const path    = require('path')
 const crypto  = require('crypto')
+const bcrypt  = require('bcrypt')
 const { runDailySync, syncNewOrders, syncRedemptions, checkExpiredOrders, processInBatches, syncRangeWithRedemptionCheck } = require('./jobs/dailySync')
 const echoss = require('./services/echoss')
 const db = require('./services/db')
@@ -23,28 +24,75 @@ function setCors(res) {
 
 app.options('/api/admin', (req, res) => { setCors(res); res.sendStatus(200) })
 
-// ── Admin token 工具 ─────────────────────────────────────────
-function getAdminToken() {
-  if (!process.env.ADMIN_PASSWORD) return null
-  return crypto.createHmac('sha256', process.env.ADMIN_PASSWORD).update('admin').digest('hex')
+// ── Admin token（stateless HMAC，每天自動換）─────────────────
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.CRON_SECRET || 'dev-secret'
+
+function generateToken(username) {
+  const day = Math.floor(Date.now() / 86400000)
+  const sig  = crypto.createHmac('sha256', SESSION_SECRET).update(`${username}:${day}`).digest('hex')
+  return `${Buffer.from(username).toString('base64url')}.${sig}`
 }
 
 function validateAdminToken(req) {
-  if (!process.env.ADMIN_PASSWORD) return true          // 未設密碼時全放行
-  return req.headers['x-admin-token'] === getAdminToken()
+  const token = req.headers['x-admin-token'] || ''
+  const parts = token.split('.')
+  if (parts.length !== 2) return false
+  const username = Buffer.from(parts[0], 'base64url').toString()
+  const day = Math.floor(Date.now() / 86400000)
+  // 接受今天和昨天（跨午夜緩衝）
+  for (const d of [day, day - 1]) {
+    const expected = crypto.createHmac('sha256', SESSION_SECRET).update(`${username}:${d}`).digest('hex')
+    if (parts[1] === expected) return true
+  }
+  return false
 }
 
-// ── POST /api/login ───────────────────────────────────────────
-app.post('/api/login', (req, res) => {
+// ── GET /api/check-setup ─────────────────────────────────────
+app.get('/api/check-setup', async (req, res) => {
   setCors(res)
-  const { password } = req.body || {}
-  if (!process.env.ADMIN_PASSWORD) {
-    return res.json({ ok: true, token: 'no-auth' })
+  try {
+    const count = await db.countAdminUsers()
+    return res.json({ needsSetup: count === 0 })
+  } catch (err) {
+    return res.status(500).json({ needsSetup: false })
   }
-  if (password === process.env.ADMIN_PASSWORD) {
-    return res.json({ ok: true, token: getAdminToken() })
+})
+
+// ── POST /api/setup（僅限第一次，無帳號時才開放）────────────
+app.post('/api/setup', async (req, res) => {
+  setCors(res)
+  try {
+    const count = await db.countAdminUsers()
+    if (count > 0) return res.status(403).json({ ok: false, error: '已有管理員帳號，無法再次設定' })
+    const { username, password } = req.body || {}
+    if (!username || !password) return res.status(400).json({ ok: false, error: '請提供帳號與密碼' })
+    if (password.length < 6) return res.status(400).json({ ok: false, error: '密碼至少需要 6 個字元' })
+    const hash = await bcrypt.hash(password, 10)
+    await db.createAdminUser(username, hash)
+    const token = generateToken(username)
+    console.log(`[setup] 管理員帳號建立：${username}`)
+    return res.json({ ok: true, token })
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message })
   }
-  return res.status(401).json({ ok: false, error: '密碼錯誤' })
+})
+
+// ── POST /api/login ───────────────────────────────────────────
+app.post('/api/login', async (req, res) => {
+  setCors(res)
+  try {
+    const { username, password } = req.body || {}
+    if (!username || !password) return res.status(400).json({ ok: false, error: '請提供帳號與密碼' })
+    const user = await db.getAdminUser(username)
+    if (!user) return res.status(401).json({ ok: false, error: '帳號或密碼錯誤' })
+    const match = await bcrypt.compare(password, user.password_hash)
+    if (!match) return res.status(401).json({ ok: false, error: '帳號或密碼錯誤' })
+    const token = generateToken(username)
+    console.log(`[login] ${username} 登入成功`)
+    return res.json({ ok: true, token })
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message })
+  }
 })
 
 // ── 週報邏輯（手動按鈕 & 自動排程共用）──────────────────────────

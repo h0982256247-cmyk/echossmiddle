@@ -467,12 +467,18 @@
   <div class="login-card">
     <div>
       <div class="login-logo">農遊生活<span> / </span>後台管理</div>
-      <div class="login-subtitle">Admin Dashboard</div>
+      <div class="login-subtitle" id="login-subtitle">Admin Dashboard</div>
+    </div>
+    <div class="login-field">
+      <label class="login-label" for="login-username">帳號</label>
+      <input type="text" id="login-username" class="login-input"
+             placeholder="請輸入帳號" autocomplete="username"
+             onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
     </div>
     <div class="login-field">
       <label class="login-label" for="login-password">密碼</label>
       <input type="password" id="login-password" class="login-input"
-             placeholder="請輸入管理密碼"
+             placeholder="請輸入密碼" autocomplete="current-password"
              onkeydown="if(event.key==='Enter') doLogin()">
     </div>
     <div>
@@ -633,35 +639,66 @@ function getToken() { return sessionStorage.getItem(TOKEN_KEY) }
 function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t) }
 function clearToken() { sessionStorage.removeItem(TOKEN_KEY) }
 
+let isSetupMode = false
+
+async function initLogin() {
+  // 檢查是否為第一次使用（無帳號）
+  try {
+    const res  = await fetch('/api/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    const data = await res.json()
+    // 403 = 已有帳號，正常登入模式；其他錯誤也當登入模式處理
+    if (res.status === 400 && data.error?.includes('帳號')) {
+      // 有 username/password 欄位錯誤 → 代表 setup 開放中
+    }
+  } catch {}
+
+  // 改用 /api/check-setup 來判斷
+  try {
+    const res = await fetch('/api/check-setup')
+    const data = await res.json()
+    isSetupMode = data.needsSetup
+    if (isSetupMode) {
+      document.getElementById('login-subtitle').textContent = '首次使用 — 建立管理員帳號'
+      document.getElementById('btn-login').textContent = '建立帳號'
+      document.getElementById('login-password').placeholder = '設定密碼（至少6碼）'
+    }
+  } catch {}
+}
+
 async function doLogin() {
+  const username = document.getElementById('login-username').value.trim()
   const password = document.getElementById('login-password').value
   const errEl    = document.getElementById('login-error')
   const btn      = document.getElementById('btn-login')
+
+  if (!username) { errEl.textContent = '請輸入帳號'; return }
   if (!password) { errEl.textContent = '請輸入密碼'; return }
 
   btn.disabled  = true
-  btn.innerHTML = '<span class="spinner"></span> 登入中...'
+  btn.innerHTML = `<span class="spinner"></span> ${isSetupMode ? '建立中...' : '登入中...'}`
   errEl.textContent = ''
 
   try {
-    const res  = await fetch('/api/login', {
+    const endpoint = isSetupMode ? '/api/setup' : '/api/login'
+    const res  = await fetch(endpoint, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ password }),
+      body:    JSON.stringify({ username, password }),
     })
     const data = await res.json()
     if (data.ok) {
       setToken(data.token)
       document.getElementById('login-page').classList.add('hidden')
       loadStatus()
+      if (isSetupMode) { isSetupMode = false }
     } else {
-      errEl.textContent = data.error || '登入失敗'
+      errEl.textContent = data.error || '操作失敗'
     }
   } catch {
     errEl.textContent = '連線失敗，請稍後再試'
   } finally {
     btn.disabled  = false
-    btn.innerHTML = '登入'
+    btn.innerHTML = isSetupMode ? '建立帳號' : '登入'
   }
 }
 
@@ -671,6 +708,7 @@ function checkAuth() {
     document.getElementById('login-page').classList.add('hidden')
     return true
   }
+  initLogin()
   return false
 }
 

@@ -197,6 +197,28 @@ async function updateLastSentAt() {
   if (error) throw new Error(`updateLastSentAt failed: ${error.message}`)
 }
 
+// ── Admin users ───────────────────────────────────────────────
+
+async function countAdminUsers() {
+  const { count, error } = await supabase
+    .from('admin_users').select('*', { count: 'exact', head: true })
+  if (error) return 0
+  return count || 0
+}
+
+async function getAdminUser(username) {
+  const { data, error } = await supabase
+    .from('admin_users').select('*').eq('username', username).single()
+  if (error) return null
+  return data
+}
+
+async function createAdminUser(username, passwordHash) {
+  const { error } = await supabase
+    .from('admin_users').insert({ username, password_hash: passwordHash })
+  if (error) throw new Error(`createAdminUser failed: ${error.message}`)
+}
+
 module.exports = {
   orderExists,
   upsertOrder,
@@ -215,4 +237,7 @@ module.exports = {
   clearWeeklyQueue,
   getLastSentAt,
   updateLastSentAt,
+  countAdminUsers,
+  getAdminUser,
+  createAdminUser,
 }
