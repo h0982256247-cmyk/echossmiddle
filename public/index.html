@@ -405,58 +405,148 @@
   /* ── LOGIN PAGE ── */
   #login-page {
     position: fixed; inset: 0;
-    background: var(--bg);
     display: flex; align-items: center; justify-content: center;
     z-index: 1000;
+    background: var(--bg);
+    /* subtle radial glow */
+    background-image: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(59,130,246,.07) 0%, transparent 70%);
   }
   #login-page.hidden { display: none; }
+
   .login-card {
+    width: 100%;
+    max-width: 380px;
     background: var(--surface);
     border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 44px 40px 36px;
+    box-shadow: 0 32px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.03) inset;
+  }
+
+  /* logo block */
+  .login-logo-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 36px;
+  }
+  .login-logo-mark {
+    width: 52px; height: 52px;
     border-radius: 14px;
-    padding: 40px 44px;
-    width: 100%; max-width: 380px;
-    display: flex; flex-direction: column; gap: 24px;
+    background: linear-gradient(135deg, rgba(59,130,246,.25) 0%, rgba(59,130,246,.08) 100%);
+    border: 1px solid rgba(59,130,246,.28);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 24px rgba(59,130,246,.15);
   }
-  .login-logo {
-    font-family: var(--mono); font-size: 16px; font-weight: 600;
-    letter-spacing: .06em; text-align: center;
+  .login-logo-mark svg { width: 22px; height: 22px; color: var(--blue); }
+  .login-logo-text {
+    text-align: center;
   }
-  .login-logo span { color: var(--blue); }
-  .login-subtitle {
-    font-size: 12px; color: var(--muted);
-    text-align: center; margin-top: -16px;
-    font-family: var(--mono); letter-spacing: .04em;
+  .login-logo-title {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--text);
+    line-height: 1.2;
   }
-  .login-field { display: flex; flex-direction: column; gap: 8px; }
+  .login-logo-title span { color: var(--blue); }
+  .login-logo-sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-top: 5px;
+  }
+
+  /* divider */
+  .login-divider {
+    height: 1px;
+    background: var(--border);
+    margin-bottom: 28px;
+  }
+
+  /* fields */
+  .login-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+  .login-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
   .login-label {
-    font-family: var(--mono); font-size: 10px;
-    letter-spacing: .08em; color: var(--muted); text-transform: uppercase;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .09em;
+    color: var(--muted);
+    text-transform: uppercase;
   }
   .login-input {
-    background: var(--bg); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px;
-    padding: 11px 14px; font-family: var(--mono); font-size: 14px;
-    outline: none; transition: border-color .15s, box-shadow .15s;
     width: 100%;
+    background: rgba(0,0,0,.25);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 11px 14px;
+    font-family: var(--sans);
+    font-size: 14px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  .login-input:hover {
+    border-color: var(--border-hi);
+    background: rgba(0,0,0,.35);
   }
   .login-input:focus {
     border-color: var(--blue);
+    background: rgba(0,0,0,.35);
     box-shadow: 0 0 0 3px var(--blue-lo);
   }
-  .login-input::placeholder { color: var(--muted); opacity: .5; }
+  .login-input::placeholder { color: var(--muted); opacity: .4; }
+
+  /* button */
   .btn-login {
-    width: 100%; padding: 12px; font-size: 13px;
-    justify-content: center; border-radius: 8px;
-    background: var(--blue); color: #fff;
-    font-family: var(--mono); font-weight: 600; letter-spacing: .04em;
-    cursor: pointer; border: none; transition: background .15s;
+    width: 100%;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 10px;
+    background: var(--blue);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    cursor: pointer;
+    border: none;
+    transition: background .15s, box-shadow .15s, transform .1s;
+    box-shadow: 0 4px 16px rgba(59,130,246,.3);
+    margin-bottom: 14px;
   }
-  .btn-login:hover:not(:disabled) { background: #2563eb; }
-  .btn-login:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-login:hover:not(:disabled) {
+    background: #2563eb;
+    box-shadow: 0 6px 20px rgba(59,130,246,.4);
+    transform: translateY(-1px);
+  }
+  .btn-login:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
+  .btn-login:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* error */
   .login-error {
-    font-family: var(--mono); font-size: 12px; color: var(--red);
-    text-align: center; min-height: 18px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--red);
+    text-align: center;
+    min-height: 18px;
+    line-height: 18px;
   }
 </style>
 </head>
@@ -465,26 +555,42 @@
 <!-- ── LOGIN PAGE ── -->
 <div id="login-page">
   <div class="login-card">
-    <div>
-      <div class="login-logo">農遊生活<span> / </span>後台管理</div>
-      <div class="login-subtitle" id="login-subtitle">Admin Dashboard</div>
+
+    <!-- Logo -->
+    <div class="login-logo-block">
+      <div class="login-logo-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/>
+          <path d="M12 6v6l4 2"/>
+        </svg>
+      </div>
+      <div class="login-logo-text">
+        <div class="login-logo-title">農遊生活<span> / </span>後台</div>
+        <div class="login-logo-sub">Admin Dashboard</div>
+      </div>
     </div>
-    <div class="login-field">
-      <label class="login-label" for="login-username">帳號</label>
-      <input type="text" id="login-username" class="login-input"
-             placeholder="請輸入帳號" autocomplete="username"
-             onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
+
+    <div class="login-divider"></div>
+
+    <!-- Fields -->
+    <div class="login-fields">
+      <div class="login-field">
+        <label class="login-label" for="login-email">Email</label>
+        <input type="email" id="login-email" class="login-input"
+               placeholder="your@email.com" autocomplete="email"
+               onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
+      </div>
+      <div class="login-field">
+        <label class="login-label" for="login-password">密碼</label>
+        <input type="password" id="login-password" class="login-input"
+               placeholder="••••••••" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter') doLogin()">
+      </div>
     </div>
-    <div class="login-field">
-      <label class="login-label" for="login-password">密碼</label>
-      <input type="password" id="login-password" class="login-input"
-             placeholder="請輸入密碼" autocomplete="current-password"
-             onkeydown="if(event.key==='Enter') doLogin()">
-    </div>
-    <div>
-      <button class="btn btn-login" id="btn-login" onclick="doLogin()">登入</button>
-      <div class="login-error" id="login-error"></div>
-    </div>
+
+    <button class="btn-login" id="btn-login" onclick="doLogin()">登入</button>
+    <div class="login-error" id="login-error"></div>
+
   </div>
 </div>
 
@@ -498,7 +604,7 @@
       </div>
     </div>
     <span class="last-refresh" id="last-refresh">—</span>
-    <button class="btn btn-ghost btn-sm" onclick="loadStatus()">↻ 重新整理</button>
+    <button class="btn btn-ghost btn-sm" onclick="doLogout()">⏏ 登出</button>
   </div>
 </header>
 
@@ -639,67 +745,44 @@ function getToken() { return sessionStorage.getItem(TOKEN_KEY) }
 function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t) }
 function clearToken() { sessionStorage.removeItem(TOKEN_KEY) }
 
-let isSetupMode = false
-
-async function initLogin() {
-  // 檢查是否為第一次使用（無帳號）
-  try {
-    const res  = await fetch('/api/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-    const data = await res.json()
-    // 403 = 已有帳號，正常登入模式；其他錯誤也當登入模式處理
-    if (res.status === 400 && data.error?.includes('帳號')) {
-      // 有 username/password 欄位錯誤 → 代表 setup 開放中
-    }
-  } catch {}
-
-  // 改用 /api/check-setup 來判斷
-  try {
-    const res = await fetch('/api/check-setup')
-    const data = await res.json()
-    isSetupMode = data.needsSetup
-    if (isSetupMode) {
-      document.getElementById('login-subtitle').textContent = '首次使用 — 建立管理員帳號'
-      document.getElementById('btn-login').textContent = '建立帳號'
-      document.getElementById('login-password').placeholder = '設定密碼（至少6碼）'
-    }
-  } catch {}
-}
-
 async function doLogin() {
-  const username = document.getElementById('login-username').value.trim()
+  const email    = document.getElementById('login-email').value.trim()
   const password = document.getElementById('login-password').value
   const errEl    = document.getElementById('login-error')
   const btn      = document.getElementById('btn-login')
 
-  if (!username) { errEl.textContent = '請輸入帳號'; return }
+  if (!email)    { errEl.textContent = '請輸入 Email'; return }
   if (!password) { errEl.textContent = '請輸入密碼'; return }
 
   btn.disabled  = true
-  btn.innerHTML = `<span class="spinner"></span> ${isSetupMode ? '建立中...' : '登入中...'}`
+  btn.innerHTML = '<span class="spinner"></span> 登入中...'
   errEl.textContent = ''
 
   try {
-    const endpoint = isSetupMode ? '/api/setup' : '/api/login'
-    const res  = await fetch(endpoint, {
+    const res  = await fetch('/api/login', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ username, password }),
+      body:    JSON.stringify({ email, password }),
     })
     const data = await res.json()
     if (data.ok) {
       setToken(data.token)
       document.getElementById('login-page').classList.add('hidden')
       loadStatus()
-      if (isSetupMode) { isSetupMode = false }
     } else {
-      errEl.textContent = data.error || '操作失敗'
+      errEl.textContent = data.error || '帳號或密碼錯誤'
     }
   } catch {
     errEl.textContent = '連線失敗，請稍後再試'
   } finally {
     btn.disabled  = false
-    btn.innerHTML = isSetupMode ? '建立帳號' : '登入'
+    btn.innerHTML = '登入'
   }
+}
+
+function doLogout() {
+  clearToken()
+  location.reload()
 }
 
 function checkAuth() {
@@ -708,7 +791,6 @@ function checkAuth() {
     document.getElementById('login-page').classList.add('hidden')
     return true
   }
-  initLogin()
   return false
 }
 
