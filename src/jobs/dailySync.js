@@ -125,7 +125,8 @@ async function syncRedemptions(fromDate, toDate, limit) {
 
       if (!order.phone) {
         console.warn(`[sync-redeem] 無手機欄位，無法查詢會員: ${orderNo}`)
-        await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: null, status: '待複查' })
+        const checkDueDate = addDays(actualRedeemDate, 7)
+        await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: null, checkDueDate, status: '待複查' })
         return null
       }
 
@@ -280,7 +281,8 @@ async function syncRangeWithRedemptionCheck(fromDate, toDate) {
       }
 
       if (!order.phone) {
-        await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: null, status: '待複查' })
+        const checkDueDate = addDays(actualRedeemDate, 7)
+        await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: null, checkDueDate, status: '待複查' })
         return null
       }
 
