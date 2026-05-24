@@ -207,8 +207,12 @@ async function authSignIn(email, password) {
 
 async function validateAuthToken(token) {
   if (!token) return false
-  const { data: { user }, error } = await supabase.auth.getUser(token)
-  return !error && !!user
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token)
+    return !error && !!user
+  } catch {
+    return false
+  }
 }
 
 module.exports = {
