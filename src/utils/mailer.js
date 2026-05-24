@@ -152,4 +152,29 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-module.exports = { sendCustomerNotification, sendReportA, sendReportB }
+/**
+ * 診斷用：測試 Gmail 連線與 OAuth2 憑證
+ */
+async function diagnoseMail() {
+  const result = {
+    gmailUser:     process.env.GMAIL_USER     ? '✓ 已設定' : '✗ 未設定',
+    clientId:      process.env.GMAIL_CLIENT_ID     ? '✓ 已設定' : '✗ 未設定',
+    clientSecret:  process.env.GMAIL_CLIENT_SECRET  ? '✓ 已設定' : '✗ 未設定',
+    refreshToken:  process.env.GMAIL_REFRESH_TOKEN  ? '✓ 已設定' : '✗ 未設定',
+    reportTo:      process.env.REPORT_TO      ? `✓ ${process.env.REPORT_TO}` : '✗ 未設定',
+    verifyResult:  null,
+    error:         null,
+  }
+  try {
+    await transporter.verify()
+    result.verifyResult = '✓ Gmail SMTP 連線成功'
+  } catch (err) {
+    result.verifyResult = '✗ 連線失敗'
+    result.error = err.message
+    result.errorCode = err.code
+    result.responseCode = err.responseCode
+  }
+  return result
+}
+
+module.exports = { sendCustomerNotification, sendReportA, sendReportB, diagnoseMail }

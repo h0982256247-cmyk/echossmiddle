@@ -5,7 +5,7 @@ const { runDailySync, syncNewOrders, syncRedemptions, checkExpiredOrders, proces
 const echoss = require('./services/echoss')
 const db = require('./services/db')
 const { generateReport } = require('./utils/report')
-const { sendReportA, sendReportB } = require('./utils/mailer')
+const { sendReportA, sendReportB, diagnoseMail } = require('./utils/mailer')
 const { getTestMode, setTestMode } = require('./utils/config')
 
 const app = express()
@@ -181,6 +181,16 @@ app.post('/api/admin', async (req, res) => {
       return res.json({ ok: true, ...result })
     } catch (err) {
       console.error('[send-report-a]', err)
+      return res.status(500).json({ ok: false, error: err.message })
+    }
+  }
+
+  // Gmail 連線診斷
+  if (action === 'diagnose-mail') {
+    try {
+      const result = await diagnoseMail()
+      return res.json({ ok: true, ...result })
+    } catch (err) {
       return res.status(500).json({ ok: false, error: err.message })
     }
   }
