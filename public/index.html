@@ -801,8 +801,9 @@ async function apiGet(params = {}) {
     headers: { 'X-Admin-Token': getToken() || '' }
   })
   if (res.status === 401) { clearToken(); location.reload(); return }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+  return data
 }
 
 async function apiPost(action, body = {}) {

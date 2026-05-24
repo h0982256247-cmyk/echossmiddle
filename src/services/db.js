@@ -184,9 +184,9 @@ async function getLastSentAt() {
     .from('report_schedule')
     .select('last_sent_at')
     .eq('id', 1)
-    .single()
+    .maybeSingle()                          // 查不到 row 返回 null，不 throw
   if (error) throw new Error(`getLastSentAt failed: ${error.message}`)
-  return data.last_sent_at ? new Date(data.last_sent_at) : null
+  return data?.last_sent_at ? new Date(data.last_sent_at) : null
 }
 
 async function updateLastSentAt() {
