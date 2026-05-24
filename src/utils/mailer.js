@@ -1,17 +1,21 @@
 const nodemailer = require('nodemailer')
+const { google }  = require('googleapis')
 const { getTestMode } = require('./config')
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    type: 'OAuth2',
-    user: process.env.GMAIL_USER,
-    clientId: process.env.GMAIL_CLIENT_ID,
-    clientSecret: process.env.GMAIL_CLIENT_SECRET,
-    refreshToken: process.env.GMAIL_REFRESH_TOKEN,
-  },
-})
+// ── Gmail API 用的 OAuth2 client ──────────────────────────────
+function makeOAuth2Client() {
+  const client = new google.auth.OAuth2(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+  )
+  client.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN })
+  return client
+}
 
+// ── nodemailer stream transport（只用來組 MIME，不實際發送）────
+const streamTransport = nodemailer.createTransport({ streamTransport: true, newline: 'unix' })
+
+// ── 核心發信函式（走 Gmail API，不走 SMTP）───────────────────
 async function sendMail({ to, cc, subject, html, attachments }) {
   const isTestMode = getTestMode()
   const actualTo   = isTestMode ? process.env.REPORT_TO : to
@@ -22,21 +26,39 @@ async function sendMail({ to, cc, subject, html, attachments }) {
     console.log(`[mailer] TEST_MODE 攔截，原收件人: ${to}${cc ? ` cc:${cc}` : ''} → 改寄 ${actualTo}`)
   }
 
-  await transporter.sendMail({
-    from: `"農遊生活" <${process.env.GMAIL_USER}>`,
-    to:   actualTo,
+  // 用 nodemailer 組裝完整 MIME 訊息
+  const info = await streamTransport.sendMail({
+    from:        `"農遊生活" <${process.env.GMAIL_USER}>`,
+    to:          actualTo,
     ...(actualCc ? { cc: actualCc } : {}),
-    subject: actualSubj,
+    subject:     actualSubj,
     html,
-    attachments,
+    attachments: attachments || [],
   })
+
+  // 將 MIME stream 讀成 Buffer → base64url
+  const chunks = []
+  for await (const chunk of info.message) chunks.push(chunk)
+  const raw = Buffer.concat(chunks)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+
+  // 透過 Gmail REST API 發送（純 HTTPS，不走 SMTP port）
+  const gmail = google.gmail({ version: 'v1', auth: makeOAuth2Client() })
+  await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: { raw },
+  })
+
+  console.log(`[mailer] 寄出成功 → ${actualTo}`)
 }
 
 /**
  * 核銷當日寄信給消費者（非會員通知，請透過 LINE OA 加入會員）
  */
 async function sendCustomerNotification({ email, customerName, orderNo, redeemDate, amount }) {
-  // TODO: 信件內容待確認後補上
   const subject = '【農遊生活】感謝您的消費 — 加入會員享點數回饋'
 
   const html = `
@@ -153,24 +175,21 @@ function esc(s) {
 }
 
 /**
- * 診斷用：分段測試 OAuth2 token 取得 和 SMTP 連線
+ * 診斷用：測試 OAuth2 token 取得
  */
 async function diagnoseMail() {
-  const https = require('https')
-
   const result = {
     envVars: {
-      GMAIL_USER:       process.env.GMAIL_USER      ? '✓' : '✗ 未設定',
-      GMAIL_CLIENT_ID:  process.env.GMAIL_CLIENT_ID  ? '✓' : '✗ 未設定',
+      GMAIL_USER:          process.env.GMAIL_USER          ? '✓' : '✗ 未設定',
+      GMAIL_CLIENT_ID:     process.env.GMAIL_CLIENT_ID     ? '✓' : '✗ 未設定',
       GMAIL_CLIENT_SECRET: process.env.GMAIL_CLIENT_SECRET ? '✓' : '✗ 未設定',
       GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN ? '✓' : '✗ 未設定',
-      REPORT_TO:        process.env.REPORT_TO        ? `✓ ${process.env.REPORT_TO}` : '✗ 未設定',
+      REPORT_TO:           process.env.REPORT_TO           ? `✓ ${process.env.REPORT_TO}` : '✗ 未設定',
     },
     oauthTokenTest: null,
-    smtpTest:       null,
+    sendMethod:     'Gmail API (HTTPS)',
   }
 
-  // Step 1：測 OAuth2 token 取得（純 HTTPS，不走 SMTP）
   try {
     const params = new URLSearchParams({
       client_id:     process.env.GMAIL_CLIENT_ID,
@@ -178,43 +197,18 @@ async function diagnoseMail() {
       refresh_token: process.env.GMAIL_REFRESH_TOKEN,
       grant_type:    'refresh_token',
     })
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
+    const res  = await fetch('https://oauth2.googleapis.com/token', {
+      method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body:    params.toString(),
       signal:  AbortSignal.timeout(10000),
     })
     const body = await res.json()
-    if (body.access_token) {
-      result.oauthTokenTest = '✓ access_token 取得成功'
-    } else {
-      result.oauthTokenTest = `✗ 失敗: ${body.error} — ${body.error_description}`
-    }
+    result.oauthTokenTest = body.access_token
+      ? '✓ access_token 取得成功'
+      : `✗ 失敗: ${body.error} — ${body.error_description}`
   } catch (err) {
     result.oauthTokenTest = `✗ 例外: ${err.message}`
-  }
-
-  // Step 2：測 SMTP 連線（有 timeout 保護）
-  try {
-    const testTransporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
-      auth: {
-        type:         'OAuth2',
-        user:         process.env.GMAIL_USER,
-        clientId:     process.env.GMAIL_CLIENT_ID,
-        clientSecret: process.env.GMAIL_CLIENT_SECRET,
-        refreshToken: process.env.GMAIL_REFRESH_TOKEN,
-      },
-      connectionTimeout: 8000,
-      greetingTimeout:   8000,
-      socketTimeout:     8000,
-    })
-    await testTransporter.verify()
-    result.smtpTest = '✓ SMTP 587 連線成功'
-  } catch (err) {
-    result.smtpTest = `✗ SMTP 587 失敗: ${err.message} (code: ${err.code})`
   }
 
   return result
