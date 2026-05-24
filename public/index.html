@@ -643,7 +643,7 @@ function renderTable(orders, total) {
       <td class="td-mono">${esc(r.check_due_date) || '—'}</td>
       <td class="td-amount">NT$ ${Number(r.amount || 0).toLocaleString()}</td>
       <td>${statusBadge(r.status)}</td>
-      <td>${pointsBadge(r.points_issued)}</td>
+      <td>${pointsBadge(r.points_issued, r.redeem_date)}</td>
     </tr>
   `).join('')
 }
@@ -685,11 +685,12 @@ function statusBadge(status) {
   return `<span class="badge ${map[status] || 'badge-muted'}">${esc(status) || '—'}</span>`
 }
 
-function pointsBadge(issued) {
-  if (issued === null || issued === undefined) return '<span style="color:var(--muted)">—</span>'
-  return issued
-    ? '<span style="color:var(--green);font-family:var(--mono);font-size:12px;">✓</span>'
-    : '<span style="color:var(--muted);font-family:var(--mono);font-size:12px;">—</span>'
+function pointsBadge(issued, redeemDate) {
+  if (issued === true)
+    return '<span style="color:var(--green);font-family:var(--mono);font-size:13px;font-weight:600;">✓</span>'
+  if (redeemDate)
+    return '<span style="color:var(--red);font-family:var(--mono);font-size:13px;font-weight:600;">✗</span>'
+  return '<span style="color:var(--muted);font-family:var(--mono);font-size:12px;">—</span>'
 }
 
 // ── TEST MODE ──────────────────────────────────────────────────
