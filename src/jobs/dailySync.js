@@ -37,7 +37,10 @@ async function issuePoints(phone, amount) {
 
 // ── 核銷處理邏輯（syncRedemptions / syncRangeWithRedemptionCheck 共用）──
 
-async function processRedemptionRecord(orderNo, redeemDate, order) {
+/**
+ * @param {boolean} skipNotification - 補跑模式傳 true，跳過寄信（歷史資料7天早已過期）
+ */
+async function processRedemptionRecord(orderNo, redeemDate, order, { skipNotification = false } = {}) {
   const today            = getTodayDateString()
   const actualRedeemDate = redeemDate || today
 
@@ -67,9 +70,14 @@ async function processRedemptionRecord(orderNo, redeemDate, order) {
     redeemDate:       actualRedeemDate,
     isMember:         false,
     checkDueDate,
-    customerNotified: false,
+    customerNotified: skipNotification ? null : false,
     status:           '待複查',
   })
+
+  if (skipNotification) {
+    log.info('redeem', '補跑模式，跳過消費者通知', { orderNo })
+    return 'notified'
+  }
 
   if (order.email) {
     try {
@@ -257,7 +265,8 @@ async function syncRangeWithRedemptionCheck(fromDate, toDate) {
         skippedCount++
         return null
       }
-      return await processRedemptionRecord(orderNo, redeemDate, order)
+      // 補跑模式：跳過寄信（歷史核銷的7天緩衝期早已過期）
+      return await processRedemptionRecord(orderNo, redeemDate, order, { skipNotification: true })
     } catch (err) {
       log.error('sync-range-redeem', '處理失敗', { orderNo, error: err.message })
       return null

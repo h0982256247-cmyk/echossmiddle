@@ -245,14 +245,15 @@
     text-align: left;
     border-bottom: 1px solid var(--border);
     background: var(--bg);
+    white-space: nowrap;
   }
   td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 14px; }
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: rgba(37,99,235,.03); }
-  .td-mono   { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .td-mono   { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
   .td-name   { font-weight: 500; }
   .td-email  { font-family: var(--mono); font-size: 10px; color: var(--muted); }
-  .td-amount { font-family: var(--mono); color: var(--amber); text-align: right; }
+  .td-amount { font-family: var(--mono); color: var(--amber); text-align: right; white-space: nowrap; }
   .empty-row td { text-align: center; padding: 40px; color: var(--muted); font-family: var(--mono); font-size: 12px; }
 
   /* ── BADGES ── */
@@ -1208,7 +1209,7 @@ async function doSyncRange() {
   } catch (err) {
     toast('補跑失敗：' + err.message, 'error')
   } finally {
-    resetBtn(btn, '↓ 補跑')
+    resetBtn(btn, '開始補跑')
   }
 }
 
