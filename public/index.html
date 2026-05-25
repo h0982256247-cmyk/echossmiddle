@@ -972,22 +972,60 @@ async function apiPost(action, body = {}) {
 }
 
 // ── LOAD ───────────────────────────────────────────────────────
+// ── Client-side cache（避免切換 tab 重打 API）────────────────
+const _statusCache = new Map()   // key: `${filter ?? 'all'}_${page}`
+const CACHE_TTL    = 60_000      // 60 秒後視為過期
+
+function _cacheKey(page, filter) { return `${filter ?? 'all'}_${page}` }
+
+function _getCached(page, filter) {
+  const entry = _statusCache.get(_cacheKey(page, filter))
+  if (!entry) return null
+  if (Date.now() - entry.ts > CACHE_TTL) { _statusCache.delete(_cacheKey(page, filter)); return null }
+  return entry.data
+}
+
+function _setCache(page, filter, data) {
+  _statusCache.set(_cacheKey(page, filter), { data, ts: Date.now() })
+}
+
+function _renderAll(data, filter) {
+  currentPage   = data.page
+  currentFilter = filter
+  renderStats(data)
+  renderTable(data.orders, data.totalOrders)
+  renderPagination(data.page, data.totalPages)
+  renderFilterTabs(filter, data.stats, data.weeklyQueueCount)
+}
+
 async function loadStatus(page = currentPage, filter = currentFilter) {
+  // 有快取 → 立即渲染，背景靜默刷新
+  const cached = _getCached(page, filter)
+  if (cached) {
+    _renderAll(cached, filter)
+    // 背景刷新（不更新 last-refresh 時間，避免閃動）
+    apiGet(Object.assign({ action: 'status', page }, filter ? { statusFilter: filter } : {}))
+      .then(data => { if (data) { _setCache(page, filter, data); _renderAll(data, filter) } })
+      .catch(() => {})
+    return
+  }
+
+  // 無快取 → 正常請求
   try {
     const params = { action: 'status', page }
     if (filter) params.statusFilter = filter
     const data = await apiGet(params)
-    currentPage   = data.page
-    currentFilter = filter
-    renderStats(data)
-    renderTable(data.orders, data.totalOrders)
-    renderPagination(data.page, data.totalPages)
-    renderFilterTabs(filter, data.stats, data.weeklyQueueCount)
+    if (!data) return
+    _setCache(page, filter, data)
+    _renderAll(data, filter)
     document.getElementById('last-refresh').textContent = '更新於 ' + new Date().toLocaleTimeString('zh-TW')
   } catch (err) {
     toast('載入失敗：' + err.message, 'error')
   }
 }
+
+/** 一鍵更新 / 手動操作後，清空快取讓下次一定拿新資料 */
+function invalidateCache() { _statusCache.clear() }
 
 function renderStats(data) {
   const s = data.stats || {}
@@ -1132,7 +1170,7 @@ async function doDailySync() {
       ex.checked   > 0 ? `複查 ${ex.checked} 筆到期訂單`  : '',
     ].filter(Boolean).join('，')
     toast(`更新完成：${msg}`, 'success')
-    await loadStatus()
+    invalidateCache(); await loadStatus()
   } catch (err) {
     toast('更新失敗：' + err.message, 'error')
   } finally {
@@ -1146,7 +1184,7 @@ async function doCheckExpired() {
     const data = await apiPost('check-expired')
     const r    = data.result || {}
     toast(`複查完成：檢查 ${r.checked} 筆，已發點 ${r.memberCount}，加入週報 ${r.queuedCount}`, 'success')
-    await loadStatus()
+    invalidateCache(); await loadStatus()
   } catch (err) {
     toast('複查失敗：' + err.message, 'error')
   } finally {
@@ -1166,7 +1204,7 @@ async function doSyncRange() {
     const o = data.ordersResult || {}
     const r = data.redeemResult || {}
     toast(`補跑完成（${from} ～ ${to}）：新增 ${o.newOrders ?? 0} 筆訂單，處理 ${r.synced ?? 0} 筆核銷`, 'success')
-    await loadStatus()
+    invalidateCache(); await loadStatus()
   } catch (err) {
     toast('補跑失敗：' + err.message, 'error')
   } finally {
@@ -1195,7 +1233,7 @@ async function doSendReportB() {
   try {
     const data = await apiPost('send-report-b')
     toast(data.message || '週報B已寄出', 'success')
-    await loadStatus()
+    invalidateCache(); await loadStatus()
   } catch (err) {
     toast('週報B寄送失敗：' + err.message, 'error')
   } finally {
