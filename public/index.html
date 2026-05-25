@@ -746,18 +746,18 @@ const KEYS = {
   expiry:  'admin_token_expiry',
 }
 
-function getToken()        { return sessionStorage.getItem(KEYS.token) }
-function getRefreshToken() { return sessionStorage.getItem(KEYS.refresh) }
-function getExpiresAt()    { return parseInt(sessionStorage.getItem(KEYS.expiry) || '0') }
+function getToken()        { return localStorage.getItem(KEYS.token) }
+function getRefreshToken() { return localStorage.getItem(KEYS.refresh) }
+function getExpiresAt()    { return parseInt(localStorage.getItem(KEYS.expiry) || '0') }
 
 function storeSession({ accessToken, refreshToken, expiresAt }) {
-  sessionStorage.setItem(KEYS.token, accessToken)
-  if (refreshToken) sessionStorage.setItem(KEYS.refresh, refreshToken)
-  if (expiresAt)    sessionStorage.setItem(KEYS.expiry,  String(expiresAt))
+  localStorage.setItem(KEYS.token, accessToken)
+  if (refreshToken) localStorage.setItem(KEYS.refresh, refreshToken)
+  if (expiresAt)    localStorage.setItem(KEYS.expiry,  String(expiresAt))
 }
 
 function clearToken() {
-  Object.values(KEYS).forEach(k => sessionStorage.removeItem(k))
+  Object.values(KEYS).forEach(k => localStorage.removeItem(k))
 }
 
 /** 距離 token 到期剩餘秒數（負值表示已過期） */
