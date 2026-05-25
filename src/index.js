@@ -65,6 +65,8 @@ app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body || {}
     if (!email || !password) return res.status(400).json({ ok: false, error: '請提供 Email 與密碼' })
+    // Log sanitized info to help diagnose autofill issues (never log actual password)
+    log.info('login', `嘗試登入`, { email, pwLen: password.length })
     const session = await db.authSignIn(email, password)
     log.info('login', `登入成功`, { email })
     return res.json({ ok: true, ...session })
