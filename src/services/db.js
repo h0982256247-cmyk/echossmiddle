@@ -238,20 +238,21 @@ async function authRefresh(refreshToken) {
 }
 
 /**
- * 驗證 JWT：優先本地驗簽（零 latency），無 secret 時 fallback 到 Supabase API
+ * 驗證 JWT：優先本地驗簽（零 latency），失敗時一律 fallback 到 Supabase API
  */
 async function validateAuthToken(token) {
   if (!token) return false
   const secret = process.env.SUPABASE_JWT_SECRET
   if (secret) {
     try {
-      jwt.verify(token, Buffer.from(secret, 'base64'))
+      // Supabase 簽 JWT 時以 raw string 為 HMAC key
+      jwt.verify(token, secret)
       return true
     } catch {
-      return false
+      // local 驗簽失敗（secret 格式不符等），fall through 到 API 驗證
     }
   }
-  // Fallback：沒設定 SUPABASE_JWT_SECRET 時走 API 驗證
+  // Supabase API 驗證（保證正確，稍慢）
   try {
     const { data: { user }, error } = await supabaseAuth.auth.getUser(token)
     return !error && !!user
