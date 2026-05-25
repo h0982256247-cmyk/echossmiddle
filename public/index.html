@@ -112,20 +112,49 @@
     margin-top: 32px;
   }
 
-  /* ── ACTION PANEL ── */
-  .action-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 4px; }
+  /* ── ACTION GRID ── */
+  .action-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 4px;
+  }
+  .action-btn-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: border-color .2s;
+  }
+  .action-btn-card:hover { border-color: var(--border-hi); }
+  .action-icon {
+    width: 38px; height: 38px;
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .action-icon svg { width: 18px; height: 18px; }
+  .action-icon.blue   { background: var(--blue-lo);   color: var(--blue); }
+  .action-icon.amber  { background: var(--amber-lo);  color: var(--amber); }
+  .action-icon.green  { background: var(--green-lo);  color: var(--green); }
+  .action-icon.purple { background: var(--purple-lo); color: var(--purple); }
+  .action-card-title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .action-card-desc  { font-size: 12px; color: #8899aa; line-height: 1.6; flex: 1; }
+  .btn-full { width: 100%; justify-content: center; }
+
+  /* ── ACTION CARD（補跑區塊用）── */
   .action-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 20px 22px;
     transition: border-color .2s;
   }
   .action-card:hover { border-color: var(--border-hi); }
-  .action-card h3 { font-size: 14px; font-weight: 600; font-family: var(--sans); margin-bottom: 14px; letter-spacing: .01em; }
-  .action-row { display: flex; flex-direction: column; gap: 12px; }
-  .action-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .action-item-desc { font-size: 13px; color: #8899aa; flex: 1; line-height: 1.5; }
+  .action-card h3 { font-size: 14px; font-weight: 600; font-family: var(--sans); margin-bottom: 8px; letter-spacing: .01em; }
 
   /* ── BUTTONS ── */
   .btn {
@@ -396,10 +425,11 @@
 
   @media (max-width: 1100px) {
     .stats { grid-template-columns: repeat(3, 1fr); }
+    .action-grid { grid-template-columns: repeat(2, 1fr); }
   }
   @media (max-width: 800px) {
     .stats { grid-template-columns: repeat(2, 1fr); }
-    .action-panel { grid-template-columns: 1fr; }
+    .action-grid { grid-template-columns: repeat(2, 1fr); }
     main { padding: 20px 16px; }
     .date-range-row { gap: 8px; }
     .date-input { min-width: 140px; }
@@ -642,34 +672,56 @@
 
   <!-- Actions -->
   <div class="section-label">每日作業</div>
-  <div class="action-panel">
-    <div class="action-card">
-      <h3>每日同步</h3>
-      <div class="action-row">
-        <div class="action-item">
-          <span class="action-item-desc">從 Rezio 拉取今日新訂單與核銷資料，並自動處理到期的7天複查（每日必按）</span>
-          <button class="btn btn-blue" id="btn-daily-sync" onclick="doDailySync()">▶ 一鍵更新</button>
-        </div>
-        <div class="action-item">
-          <span class="action-item-desc">單獨執行7天複查，確認已核銷但未入會的訂單是否已入會並結案（已含在一鍵更新內）</span>
-          <button class="btn btn-amber" id="btn-check-expired" onclick="doCheckExpired()">↺ 7天複查</button>
-        </div>
+  <div class="action-grid">
+
+    <div class="action-btn-card">
+      <div class="action-icon blue">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/>
+        </svg>
       </div>
+      <div class="action-card-title">一鍵更新</div>
+      <div class="action-card-desc">每日從 Rezio 同步訂單與核銷，並自動處理到期的7天複查。<strong style="color:var(--blue)">每天必按。</strong></div>
+      <button class="btn btn-blue btn-full" id="btn-daily-sync" onclick="doDailySync()">▶ 一鍵更新</button>
     </div>
 
-    <div class="action-card">
-      <h3>週報寄送</h3>
-      <div class="action-row">
-        <div class="action-item">
-          <span class="action-item-desc">週報A：寄出上週下單但還沒入會的名單，附 Excel，供主動招攬入會使用</span>
-          <button class="btn btn-green" id="btn-report-a" onclick="doSendReportA()">✉ 週報A</button>
-        </div>
-        <div class="action-item">
-          <span class="action-item-desc">週報B：寄出核銷後7天仍未入會的結案名單，附 Excel，寄出後自動清空佇列</span>
-          <button class="btn btn-purple" id="btn-report-b" onclick="doSendReportB()">✉ 週報B</button>
-        </div>
+    <div class="action-btn-card">
+      <div class="action-icon amber">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
       </div>
+      <div class="action-card-title">7天複查</div>
+      <div class="action-card-desc">單獨複查已核銷但未入會的訂單。此功能已含在一鍵更新內，一般不需單獨使用。</div>
+      <button class="btn btn-amber btn-full" id="btn-check-expired" onclick="doCheckExpired()">↺ 7天複查</button>
     </div>
+
+    <div class="action-btn-card">
+      <div class="action-icon green">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+      </div>
+      <div class="action-card-title">週報 A</div>
+      <div class="action-card-desc">寄出上週下單但還沒入會的名單，附 Excel，供主動聯繫招攬入會。</div>
+      <button class="btn btn-green btn-full" id="btn-report-a" onclick="doSendReportA()">✉ 寄出週報 A</button>
+    </div>
+
+    <div class="action-btn-card">
+      <div class="action-icon purple">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+      </div>
+      <div class="action-card-title">週報 B</div>
+      <div class="action-card-desc">寄出核銷後7天仍未入會的結案名單，附 Excel，寄出後自動清空佇列。</div>
+      <button class="btn btn-purple btn-full" id="btn-report-b" onclick="doSendReportB()">✉ 寄出週報 B</button>
+    </div>
+
   </div>
 
   <!-- Sync Range -->
