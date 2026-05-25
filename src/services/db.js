@@ -245,7 +245,7 @@ async function validateAuthToken(token) {
   const secret = process.env.SUPABASE_JWT_SECRET
   if (secret) {
     try {
-      jwt.verify(token, secret)
+      jwt.verify(token, Buffer.from(secret, 'base64'))
       return true
     } catch {
       return false

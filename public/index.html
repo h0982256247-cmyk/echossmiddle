@@ -813,6 +813,7 @@ async function doLogin() {
       storeSession({ accessToken: data.accessToken, refreshToken: data.refreshToken, expiresAt: data.expiresAt })
       document.getElementById('login-page').classList.add('hidden')
       loadStatus()
+      startAutoRefresh()                 // 全新登入也要啟動自動刷新
     } else {
       errEl.textContent = data.error || '帳號或密碼錯誤'
     }
@@ -1118,12 +1119,24 @@ function toast(msg, type = 'info') {
 }
 
 // ── INIT ──────────────────────────────────────────────────────
-if (checkAuth()) {
-  loadStatus(1, null)
-  setInterval(async () => {
-    await maybeRefreshToken()            // 先確保 token 有效
+let _refreshInterval = null
+
+function startAutoRefresh() {
+  if (_refreshInterval) return           // 避免重複啟動
+  _refreshInterval = setInterval(async () => {
+    await maybeRefreshToken()
     loadStatus(currentPage, currentFilter)
   }, 60000)
+}
+
+async function initDashboard() {
+  await maybeRefreshToken()              // 頁面載入時先確保 token 有效
+  loadStatus(1, null)
+  startAutoRefresh()
+}
+
+if (checkAuth()) {
+  initDashboard()
 }
 </script>
 </body>
