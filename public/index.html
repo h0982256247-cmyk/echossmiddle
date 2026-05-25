@@ -233,7 +233,7 @@
   }
   .table-header h3 { font-size: 13px; font-weight: 500; font-family: var(--mono); letter-spacing: .04em; }
 
-  table { width: 100%; border-collapse: collapse; }
+  table { width: 100%; border-collapse: collapse; min-width: 900px; }
   th {
     font-family: var(--sans);
     font-size: 11px;
@@ -241,30 +241,47 @@
     letter-spacing: .04em;
     color: var(--muted);
     text-transform: uppercase;
-    padding: 11px 14px;
+    padding: 10px 12px;
     text-align: left;
     border-bottom: 1px solid var(--border);
     background: var(--bg);
     white-space: nowrap;
   }
-  td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: rgba(37,99,235,.03); }
-  .td-mono   { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
-  .td-name   { font-weight: 500; }
-  .td-email  { font-family: var(--mono); font-size: 10px; color: var(--muted); }
-  .td-amount { font-family: var(--mono); color: var(--amber); text-align: right; white-space: nowrap; }
+
+  /* 欄位寬度錨點：讓瀏覽器依比例分配，不隨內容擠壓 */
+  th:nth-child(1) { width: 90px;  }   /* 姓名 */
+  th:nth-child(2) { width: 110px; }   /* 手機 */
+  th:nth-child(3) { width: 180px; }   /* Email */
+  th:nth-child(4) { width: 150px; }   /* 訂單號 */
+  th:nth-child(5) { width: 88px;  }   /* 下單日期 */
+  th:nth-child(6) { width: 88px;  }   /* 核銷日期 */
+  th:nth-child(7) { width: 88px;  }   /* 複查截止日 */
+  th:nth-child(8) { width: 90px;  }   /* 消費金額 */
+  th:nth-child(9) { width: 76px;  }   /* 狀態 */
+  th:nth-child(10){ width: 44px;  }   /* 發點 */
+
+  .td-mono   { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .td-name   { font-weight: 600; font-size: 13px; white-space: nowrap; }
+  .td-email  {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .td-amount { font-family: var(--mono); font-size: 12px; color: var(--amber); text-align: right; white-space: nowrap; font-weight: 600; }
   .empty-row td { text-align: center; padding: 40px; color: var(--muted); font-family: var(--mono); font-size: 12px; }
 
   /* ── BADGES ── */
   .badge {
     display: inline-flex;
     align-items: center;
-    padding: 2px 10px;
+    padding: 3px 10px;
     border-radius: 20px;
     font-family: var(--mono);
     font-size: 11px;
     font-weight: 500;
+    white-space: nowrap;
   }
   .badge-blue   { background: var(--blue-lo);   color: var(--blue); }
   .badge-amber  { background: var(--amber-lo);  color: var(--amber); }
@@ -809,12 +826,12 @@
         <thead>
           <tr>
             <th>姓名</th>
-            <th>手機號碼</th>
+            <th>手機</th>
             <th>電子信箱</th>
             <th>訂單號</th>
             <th>下單日期</th>
             <th>核銷日期</th>
-            <th>複查截止日</th>
+            <th>截止日</th>
             <th style="text-align:right">消費金額</th>
             <th>狀態</th>
             <th>發點</th>
