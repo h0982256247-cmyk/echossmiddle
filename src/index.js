@@ -7,42 +7,87 @@ const db = require('./services/db')
 const { generateReport } = require('./utils/report')
 const { sendReportA, sendReportB, diagnoseMail } = require('./utils/mailer')
 const { getTestMode, setTestMode } = require('./utils/config')
+const log = require('./utils/logger')
 
-const app = express()
+const app  = express()
 const PORT = process.env.PORT || 3000
 
 app.use(express.json())
 app.use(express.static(path.join(__dirname, '../public')))
 
+// ── CORS ──────────────────────────────────────────────────────
+// 只在設定 ALLOWED_ORIGIN 時加 header；同源部署不需要設定
 function setCors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
+  const origin = process.env.ALLOWED_ORIGIN
+  if (!origin) return
+  res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Admin-Token')
 }
 
 app.options('/api/admin', (req, res) => { setCors(res); res.sendStatus(200) })
 
-// ── Admin token（Supabase Auth JWT）──────────────────────────
+// ── Login rate limiting（in-memory，每 IP 15 分鐘內最多 10 次）──
+const loginAttempts = new Map()
+const RATE_LIMIT    = { max: 10, windowMs: 15 * 60 * 1000 }
+
+function isRateLimited(ip) {
+  const now   = Date.now()
+  const entry = loginAttempts.get(ip) || { count: 0, resetAt: now + RATE_LIMIT.windowMs }
+  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + RATE_LIMIT.windowMs }
+  entry.count++
+  loginAttempts.set(ip, entry)
+  return entry.count > RATE_LIMIT.max
+}
+
+// 每小時清理過期紀錄，避免 memory leak
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, entry] of loginAttempts) {
+    if (now > entry.resetAt) loginAttempts.delete(ip)
+  }
+}, 60 * 60 * 1000)
+
+// ── Admin JWT 驗證 ────────────────────────────────────────────
 async function validateAdminToken(req) {
   const token = req.headers['x-admin-token'] || ''
   return db.validateAuthToken(token)
 }
 
-// ── POST /api/login（Supabase Auth）──────────────────────────
+// ── POST /api/login ───────────────────────────────────────────
 app.post('/api/login', async (req, res) => {
   setCors(res)
+  const ip = req.ip || req.socket.remoteAddress
+  if (isRateLimited(ip)) {
+    log.warn('login', '登入次數過多', { ip })
+    return res.status(429).json({ ok: false, error: '登入嘗試次數過多，請 15 分鐘後再試' })
+  }
   try {
     const { email, password } = req.body || {}
     if (!email || !password) return res.status(400).json({ ok: false, error: '請提供 Email 與密碼' })
-    const token = await db.authSignIn(email, password)
-    console.log(`[login] ${email} 登入成功`)
-    return res.json({ ok: true, token })
+    const session = await db.authSignIn(email, password)
+    log.info('login', `登入成功`, { email })
+    return res.json({ ok: true, ...session })
   } catch (err) {
+    log.warn('login', `登入失敗`, { error: err.message })
     return res.status(401).json({ ok: false, error: err.message || '帳號或密碼錯誤' })
   }
 })
 
-// ── 週報邏輯（手動按鈕 & 自動排程共用）──────────────────────────
+// ── POST /api/refresh ─────────────────────────────────────────
+app.post('/api/refresh', async (req, res) => {
+  setCors(res)
+  try {
+    const { refreshToken } = req.body || {}
+    if (!refreshToken) return res.status(400).json({ ok: false, error: '請提供 refreshToken' })
+    const session = await db.authRefresh(refreshToken)
+    return res.json({ ok: true, ...session })
+  } catch (err) {
+    return res.status(401).json({ ok: false, error: err.message })
+  }
+})
+
+// ── 週報邏輯 ─────────────────────────────────────────────────
 
 async function runReportA() {
   const { from, to } = getLastWeekRange()
@@ -57,54 +102,49 @@ async function runReportA() {
   const periodLabel = `${from} ~ ${to}`
   const excelBuffer = nonMembers.length > 0 ? await generateReport(nonMembers, periodLabel) : null
   await sendReportA(excelBuffer, nonMembers.length, periodLabel)
-  console.log(`[report-a] 已寄出，共 ${nonMembers.length} 筆，期間 ${periodLabel}`)
+  log.info('report-a', `已寄出`, { count: nonMembers.length, period: periodLabel })
   return { skipped: false, message: `週報A已寄出，共 ${nonMembers.length} 筆`, count: nonMembers.length }
 }
 
 async function runReportB() {
   const records = await db.getWeeklyQueue()
-
-  const dates       = records.map(r => r.redeem_date).filter(Boolean).sort()
-  const periodLabel = dates.length ? `${dates[0]} ~ ${dates[dates.length - 1]}` : new Date().toISOString().slice(0, 10)
+  const dates   = records.map(r => r.redeem_date).filter(Boolean).sort()
+  const periodLabel = dates.length
+    ? `${dates[0]} ~ ${dates[dates.length - 1]}`
+    : new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei' }).format(new Date())
   const excelBuffer = records.length > 0 ? await generateReport(records, periodLabel) : null
   await sendReportB(excelBuffer, records.length, periodLabel)
   await db.clearWeeklyQueue()
   await db.updateLastSentAt()
-  console.log(`[report-b] 已寄出，共 ${records.length} 筆，期間 ${periodLabel}`)
+  log.info('report-b', `已寄出`, { count: records.length, period: periodLabel })
   return { skipped: false, message: `週報B已寄出，共 ${records.length} 筆`, count: records.length }
 }
 
-// ── POST /api/run（每日排程，需 CRON_SECRET）────────────────────
+// ── POST /api/run（pg_cron 每小時觸發）───────────────────────
 app.post('/api/run', (req, res) => {
   const auth   = req.headers['authorization'] || ''
   const secret = process.env.CRON_SECRET
-  if (!secret || auth !== `Bearer ${secret}`) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
+  if (!secret || auth !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' })
 
   res.status(202).json({ ok: true, message: 'daily sync started' })
-
   runDailySync()
-    .then(result => console.log('[api/run] 完成', JSON.stringify(result)))
-    .catch(err   => console.error('[api/run] 執行失敗', err.message))
+    .then(r  => log.info('api/run', '完成', r))
+    .catch(e => log.error('api/run', '執行失敗', { error: e.message }))
 })
 
-// ── POST /api/run-weekly（每週一排程，需 CRON_SECRET）──────────
+// ── POST /api/run-weekly（pg_cron 每週一觸發）────────────────
 app.post('/api/run-weekly', (req, res) => {
   const auth   = req.headers['authorization'] || ''
   const secret = process.env.CRON_SECRET
-  if (!secret || auth !== `Bearer ${secret}`) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
+  if (!secret || auth !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' })
 
   res.status(202).json({ ok: true, message: 'weekly sync started' })
-
   Promise.all([runReportA(), runReportB()])
-    .then(([a, b]) => console.log('[api/run-weekly] 完成', JSON.stringify({ a, b })))
-    .catch(err     => console.error('[api/run-weekly] 執行失敗', err.message))
+    .then(([a, b]) => log.info('api/run-weekly', '完成', { a, b }))
+    .catch(e       => log.error('api/run-weekly', '執行失敗', { error: e.message }))
 })
 
-// ── GET /api/admin?action=status ───────────────────────────────
+// ── GET /api/admin?action=status ──────────────────────────────
 app.get('/api/admin', async (req, res) => {
   setCors(res)
   if (!(await validateAdminToken(req))) return res.status(401).json({ error: 'Unauthorized' })
@@ -124,18 +164,19 @@ app.get('/api/admin', async (req, res) => {
       ])
 
       return res.json({
-        orders:      ordersResult.rows,
-        totalOrders: ordersResult.total,
+        orders:          ordersResult.rows,
+        totalOrders:     ordersResult.total,
         page,
         pageSize,
-        totalPages:  Math.ceil(ordersResult.total / pageSize),
+        totalPages:      Math.ceil(ordersResult.total / pageSize),
         stats,
         weeklyQueueCount: queueCount,
-        lastSentAt:  lastSentAt?.toISOString() || null,
-        now:         new Date().toISOString(),
-        testMode:    getTestMode(),
+        lastSentAt:      lastSentAt?.toISOString() || null,
+        now:             new Date().toISOString(),
+        testMode:        getTestMode(),
       })
     } catch (err) {
+      log.error('api/admin', 'status 失敗', { error: err.message })
       return res.status(500).json({ error: err.message })
     }
   }
@@ -143,24 +184,22 @@ app.get('/api/admin', async (req, res) => {
   return res.status(404).json({ error: 'Not Found' })
 })
 
-// ── POST /api/admin?action=... ─────────────────────────────────
+// ── POST /api/admin?action=... ────────────────────────────────
 app.post('/api/admin', async (req, res) => {
   setCors(res)
   if (!(await validateAdminToken(req))) return res.status(401).json({ error: 'Unauthorized' })
   const { action } = req.query
 
-  // 一鍵更新：同步今日訂單 + 核銷 + 7天複查
   if (action === 'run-daily-sync') {
     try {
       const result = await runDailySync()
       return res.json({ ok: true, result })
     } catch (err) {
-      console.error('[run-daily-sync]', err)
+      log.error('run-daily-sync', err.message)
       return res.status(500).json({ ok: false, error: err.message })
     }
   }
 
-  // 補跑歷史區間：先同步指定區間的訂單，再確認這批訂單截至今天的核銷狀態
   if (action === 'sync-range') {
     try {
       const { from, to } = req.body
@@ -169,45 +208,41 @@ app.post('/api/admin', async (req, res) => {
       const { ordersResult, redeemResult } = await syncRangeWithRedemptionCheck(from, to)
       return res.json({ ok: true, from, to, ordersResult, redeemResult })
     } catch (err) {
-      console.error('[sync-range]', err)
+      log.error('sync-range', err.message)
       return res.status(500).json({ ok: false, error: err.message })
     }
   }
 
-  // 手動觸發7天複查
   if (action === 'check-expired') {
     try {
       const result = await checkExpiredOrders()
       return res.json({ ok: true, result })
     } catch (err) {
-      console.error('[check-expired]', err)
+      log.error('check-expired', err.message)
       return res.status(500).json({ ok: false, error: err.message })
     }
   }
 
-  // 週報B：核銷後7天仍未入會
   if (action === 'send-report-b') {
     try {
       const result = await runReportB()
       return res.json({ ok: true, ...result })
     } catch (err) {
-      console.error('[send-report-b]', err)
+      log.error('send-report-b', err.message)
       return res.status(500).json({ ok: false, error: err.message })
     }
   }
 
-  // 週報A：上週下單但未入會
   if (action === 'send-report-a') {
     try {
       const result = await runReportA()
       return res.json({ ok: true, ...result })
     } catch (err) {
-      console.error('[send-report-a]', err)
+      log.error('send-report-a', err.message)
       return res.status(500).json({ ok: false, error: err.message })
     }
   }
 
-  // Gmail 連線診斷
   if (action === 'diagnose-mail') {
     try {
       const result = await diagnoseMail()
@@ -217,7 +252,6 @@ app.post('/api/admin', async (req, res) => {
     }
   }
 
-  // 測試模式開關
   if (action === 'toggle-test-mode') {
     const enabled = typeof req.body?.enabled === 'boolean' ? req.body.enabled : !getTestMode()
     setTestMode(enabled)
@@ -227,16 +261,16 @@ app.post('/api/admin', async (req, res) => {
   return res.status(404).json({ error: 'Not Found' })
 })
 
-// ── Helper：計算上週一～日的日期範圍（台北時間）────────────────
+// ── Helper：上週一～日（台北時間，使用 Intl）──────────────────
 function getLastWeekRange() {
-  const now      = new Date()
-  const taipei   = new Date(now.getTime() + 8 * 60 * 60 * 1000)
-  const day      = taipei.getUTCDay() // 0=Sun,1=Mon,...,6=Sat
-  const daysToLastMonday = (day === 0 ? 6 : day - 1) + 7
+  const tz         = 'Asia/Taipei'
+  const todayStr   = new Intl.DateTimeFormat('sv-SE', { timeZone: tz }).format(new Date())
+  const todayDate  = new Date(todayStr + 'T00:00:00Z')
+  const day        = todayDate.getUTCDay()                    // 0=Sun … 6=Sat
+  const toLastMon  = (day === 0 ? 6 : day - 1) + 7           // 往回至少一整週
 
-  const lastMonday = new Date(taipei)
-  lastMonday.setUTCDate(taipei.getUTCDate() - daysToLastMonday)
-  lastMonday.setUTCHours(0, 0, 0, 0)
+  const lastMonday = new Date(todayDate)
+  lastMonday.setUTCDate(todayDate.getUTCDate() - toLastMon)
 
   const lastSunday = new Date(lastMonday)
   lastSunday.setUTCDate(lastMonday.getUTCDate() + 6)
@@ -247,6 +281,4 @@ function getLastWeekRange() {
   }
 }
 
-app.listen(PORT, () => {
-  console.log(`rezio-bridge running on port ${PORT}`)
-})
+app.listen(PORT, () => log.info('server', `rezio-bridge running on port ${PORT}`))

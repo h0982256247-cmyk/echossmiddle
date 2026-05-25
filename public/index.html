@@ -739,11 +739,55 @@ let currentPage   = 1
 let currentFilter = null
 
 // ── AUTH ───────────────────────────────────────────────────────
-const TOKEN_KEY = 'admin_token'
+const KEYS = {
+  token:   'admin_token',
+  refresh: 'admin_refresh_token',
+  expiry:  'admin_token_expiry',
+}
 
-function getToken() { return sessionStorage.getItem(TOKEN_KEY) }
-function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t) }
-function clearToken() { sessionStorage.removeItem(TOKEN_KEY) }
+function getToken()        { return sessionStorage.getItem(KEYS.token) }
+function getRefreshToken() { return sessionStorage.getItem(KEYS.refresh) }
+function getExpiresAt()    { return parseInt(sessionStorage.getItem(KEYS.expiry) || '0') }
+
+function storeSession({ accessToken, refreshToken, expiresAt }) {
+  sessionStorage.setItem(KEYS.token, accessToken)
+  if (refreshToken) sessionStorage.setItem(KEYS.refresh, refreshToken)
+  if (expiresAt)    sessionStorage.setItem(KEYS.expiry,  String(expiresAt))
+}
+
+function clearToken() {
+  Object.values(KEYS).forEach(k => sessionStorage.removeItem(k))
+}
+
+/** 距離 token 到期剩餘秒數（負值表示已過期） */
+function tokenSecondsLeft() {
+  const exp = getExpiresAt()
+  return exp ? exp - Math.floor(Date.now() / 1000) : 0
+}
+
+/** 若 token 即將到期（< 5 分鐘），用 refresh token 換新 */
+async function maybeRefreshToken() {
+  if (tokenSecondsLeft() > 300) return   // 還有 5 分鐘以上，不需要刷新
+  const refresh = getRefreshToken()
+  if (!refresh) return
+
+  try {
+    const res  = await fetch('/api/refresh', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ refreshToken: refresh }),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      storeSession({ accessToken: data.accessToken, refreshToken: data.refreshToken, expiresAt: data.expiresAt })
+    } else {
+      clearToken()
+      location.reload()
+    }
+  } catch {
+    // 網路問題時靜默失敗，下次 interval 再試
+  }
+}
 
 async function doLogin() {
   const email    = document.getElementById('login-email').value.trim()
@@ -766,7 +810,7 @@ async function doLogin() {
     })
     const data = await res.json()
     if (data.ok) {
-      setToken(data.token)
+      storeSession({ accessToken: data.accessToken, refreshToken: data.refreshToken, expiresAt: data.expiresAt })
       document.getElementById('login-page').classList.add('hidden')
       loadStatus()
     } else {
@@ -786,12 +830,9 @@ function doLogout() {
 }
 
 function checkAuth() {
-  const token = getToken()
-  if (token) {
-    document.getElementById('login-page').classList.add('hidden')
-    return true
-  }
-  return false
+  if (!getToken()) return false
+  document.getElementById('login-page').classList.add('hidden')
+  return true
 }
 
 // ── API ────────────────────────────────────────────────────────
@@ -1079,7 +1120,10 @@ function toast(msg, type = 'info') {
 // ── INIT ──────────────────────────────────────────────────────
 if (checkAuth()) {
   loadStatus(1, null)
-  setInterval(() => loadStatus(currentPage, currentFilter), 60000)
+  setInterval(async () => {
+    await maybeRefreshToken()            // 先確保 token 有效
+    loadStatus(currentPage, currentFilter)
+  }, 60000)
 }
 </script>
 </body>

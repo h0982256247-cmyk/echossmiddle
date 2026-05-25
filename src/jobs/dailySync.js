@@ -2,6 +2,7 @@ const rezio = require('../services/rezio')
 const echoss = require('../services/echoss')
 const db = require('../services/db')
 const { sendCustomerNotification } = require('../utils/mailer')
+const log = require('../utils/logger')
 
 const CONCURRENCY = 5
 
@@ -18,9 +19,7 @@ async function processInBatches(items, fn) {
 }
 
 function getTodayDateString() {
-  const now    = new Date()
-  const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000)
-  return taipei.toISOString().slice(0, 10)
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei' }).format(new Date())
 }
 
 function addDays(dateStr, days) {
@@ -33,7 +32,7 @@ function addDays(dateStr, days) {
 async function issuePoints(phone, amount) {
   const points = Math.floor(Number(amount))
   // TODO: 待串接 Echoss 發點 API
-  console.log(`[points] 發點佔位 phone=${phone} points=${points}`)
+  log.info('points', '發點佔位（Echoss API 待串接）', { phone, points })
 }
 
 // ── 核銷處理邏輯（syncRedemptions / syncRangeWithRedemptionCheck 共用）──
@@ -46,7 +45,7 @@ async function processRedemptionRecord(orderNo, redeemDate, order) {
   if (order.redeem_date && order.is_member_at_redeem !== null) return null
 
   if (!order.phone) {
-    console.warn(`[redeem] 無手機欄位，無法查詢會員: ${orderNo}`)
+    log.warn('redeem', '無手機欄位，無法查詢會員', { orderNo })
     const checkDueDate = addDays(actualRedeemDate, 7)
     await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: null, checkDueDate, status: '待複查' })
     return null
@@ -58,7 +57,7 @@ async function processRedemptionRecord(orderNo, redeemDate, order) {
     await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: true, status: '已發點' })
     await issuePoints(order.phone, order.amount)
     await db.markPointsIssued(orderNo)
-    console.log(`[redeem] 已入會，已發點: ${orderNo} ${order.phone}`)
+    log.info('redeem', '已入會，已發點', { orderNo, phone: order.phone })
     return 'member'
   }
 
@@ -82,12 +81,12 @@ async function processRedemptionRecord(orderNo, redeemDate, order) {
         amount:       order.amount,
       })
       await db.setCustomerNotified(orderNo)
-      console.log(`[redeem] 非會員，已通知消費者: ${orderNo} ${order.email}`)
+      log.info('redeem', '非會員，已通知消費者', { orderNo, email: order.email })
     } catch (mailErr) {
-      console.error(`[redeem] 發信失敗 ${orderNo}:`, mailErr.message)
+      log.error('redeem', '發信失敗', { orderNo, error: mailErr.message })
     }
   } else {
-    console.warn(`[redeem] 無 email，跳過通知: ${orderNo}`)
+    log.warn('redeem', '無 email，跳過通知', { orderNo })
   }
 
   return 'notified'
@@ -99,10 +98,10 @@ async function syncNewOrders(fromDate, toDate) {
   const today = getTodayDateString()
   const from  = fromDate || today
   const to    = toDate   || from
-  console.log(`[sync-orders] 開始 from=${from} to=${to}`)
+  log.info('sync-orders', '開始', { from, to })
 
   const allOrders = await rezio.getOrders(from, to)
-  console.log(`[sync-orders] 取得訂單: ${allOrders.length} 筆`)
+  log.info('sync-orders', `取得訂單 ${allOrders.length} 筆`)
 
   const results = await processInBatches(allOrders, async (order) => {
     // amout（非拼錯）是 Rezio API 本身的 typo，保留作備用 fallback
@@ -122,16 +121,16 @@ async function syncNewOrders(fromDate, toDate) {
         orderDate,
         amount: detailAmount || amount || amout || 0,
       })
-      console.log(`[sync-orders] 新增訂單: ${orderNo} ${customerName}`)
+      log.info('sync-orders', '新增訂單', { orderNo, customerName })
       return true
     } catch (err) {
-      console.error(`[sync-orders] 處理訂單失敗 ${orderNo}:`, err.message)
+      log.error('sync-orders', '處理訂單失敗', { orderNo, error: err.message })
       return false
     }
   })
 
   const newOrders = results.filter(Boolean).length
-  console.log(`[sync-orders] 完成，新增: ${newOrders} 筆`)
+  log.info('sync-orders', '完成', { synced: allOrders.length, newOrders })
   return { synced: allOrders.length, newOrders }
 }
 
@@ -141,11 +140,11 @@ async function syncRedemptions(fromDate, toDate) {
   const today = getTodayDateString()
   const from  = fromDate || today
   const to    = toDate   || from
-  console.log(`[sync-redeem] 開始 from=${from} to=${to}`)
+  log.info("sync-redeem", "開始", { from, to })
 
   const allRedemptions = await rezio.getRedemptions(from, to)
   const redemptions    = Array.from(new Map(allRedemptions.map(r => [r.orderNo, r])).values())
-  console.log(`[sync-redeem] 核銷紀錄: ${allRedemptions.length}，去重: ${redemptions.length}`)
+  log.info("sync-redeem", "核銷紀錄去重完成", { total: allRedemptions.length, unique: redemptions.length })
 
   const results = await processInBatches(redemptions, async (record) => {
     const { orderNo, redeemDate } = record
@@ -154,7 +153,7 @@ async function syncRedemptions(fromDate, toDate) {
       if (!order) {
         // 訂單不在 DB，嘗試從 Rezio 補進來
         const rezioOrder = await rezio.getOrderByOrderNo(orderNo)
-        if (!rezioOrder) { console.warn(`[sync-redeem] 找不到訂單: ${orderNo}`); return null }
+        if (!rezioOrder) { log.warn('sync-redeem', '找不到訂單', { orderNo }); return null }
         const { phone, email, amount } = await rezio.getOrderDetail(orderNo)
         const customerName = `${rezioOrder.contactLastName || ''}${rezioOrder.contactFirstName || ''}`.trim()
         const orderDate    = rezioOrder.createdAt ? rezioOrder.createdAt.slice(0, 10) : today
@@ -163,14 +162,14 @@ async function syncRedemptions(fromDate, toDate) {
       }
       return await processRedemptionRecord(orderNo, redeemDate, order)
     } catch (err) {
-      console.error(`[sync-redeem] 處理核銷失敗 ${orderNo}:`, err.message)
+      log.error('sync-redeem', '處理核銷失敗', { orderNo, error: err.message })
       return null
     }
   })
 
   const memberCount   = results.filter(r => r === 'member').length
   const notifiedCount = results.filter(r => r === 'notified').length
-  console.log(`[sync-redeem] 完成 已入會:${memberCount} 非會員通知:${notifiedCount}`)
+  log.info('sync-redeem', '完成', { memberCount, notifiedCount })
   return { synced: redemptions.length, memberCount, notifiedCount }
 }
 
@@ -178,16 +177,16 @@ async function syncRedemptions(fromDate, toDate) {
 
 async function checkExpiredOrders() {
   const today = getTodayDateString()
-  console.log(`[check-expired] 開始，today=${today}`)
+  log.info('check-expired', '開始', { today })
 
   const orders = await db.getOrdersDueForCheck(today)
-  console.log(`[check-expired] 到期訂單: ${orders.length} 筆`)
+  log.info('check-expired', `到期訂單 ${orders.length} 筆`)
 
   const results = await processInBatches(orders, async (order) => {
     const { order_no: orderNo, phone, email, customer_name, order_date, redeem_date, amount } = order
     try {
       if (!phone) {
-        console.warn(`[check-expired] 無手機欄位: ${orderNo}，加入週報並結案`)
+        log.warn('check-expired', '無手機欄位，加入週報並結案', { orderNo })
         await db.addToWeeklyQueue({ orderNo, customerName: customer_name, phone, email, orderDate: order_date, redeemDate: redeem_date, amount })
         await db.closeOrder(orderNo, false)
         return 'queued'
@@ -197,23 +196,23 @@ async function checkExpiredOrders() {
       if (isMember) {
         await issuePoints(phone, amount)
         await db.closeOrder(orderNo, true)
-        console.log(`[check-expired] 已入會，已發點並結案: ${orderNo} ${phone}`)
+        log.info('check-expired', '已入會，已發點並結案', { orderNo, phone })
         return 'member'
       } else {
         await db.addToWeeklyQueue({ orderNo, customerName: customer_name, phone, email, orderDate: order_date, redeemDate: redeem_date, amount })
         await db.closeOrder(orderNo, false)
-        console.log(`[check-expired] 仍未入會，加入週報並結案: ${orderNo}`)
+        log.info('check-expired', '仍未入會，加入週報並結案', { orderNo })
         return 'queued'
       }
     } catch (err) {
-      console.error(`[check-expired] 處理失敗 ${orderNo}:`, err.message)
+      log.error('check-expired', '處理失敗', { orderNo, error: err.message })
       return null
     }
   })
 
   const memberCount = results.filter(r => r === 'member').length
   const queuedCount = results.filter(r => r === 'queued').length
-  console.log(`[check-expired] 完成 已發點:${memberCount} 加入週報:${queuedCount}`)
+  log.info('check-expired', '完成', { memberCount, queuedCount })
   return { checked: orders.length, memberCount, queuedCount }
 }
 
@@ -221,7 +220,7 @@ async function checkExpiredOrders() {
 
 async function runDailySync() {
   const today = getTodayDateString()
-  console.log(`[daily-sync] 開始 date=${today}`)
+  log.info('daily-sync', '開始', { today })
 
   const ordersResult  = await syncNewOrders(today, today)
   const redeemResult  = await syncRedemptions(today, today)
@@ -242,10 +241,10 @@ async function syncRangeWithRedemptionCheck(fromDate, toDate) {
 
   const ordersResult = await syncNewOrders(fromDate, toDate)
 
-  console.log(`[sync-range-redeem] 查詢核銷 from=${fromDate} to=${today}`)
+  log.info('sync-range-redeem', '查詢核銷', { from: fromDate, to: today })
   const allRedemptions = await rezio.getRedemptions(fromDate, today)
   const unique         = Array.from(new Map(allRedemptions.map(r => [r.orderNo, r])).values())
-  console.log(`[sync-range-redeem] 核銷紀錄共 ${unique.length} 筆`)
+  log.info('sync-range-redeem', `核銷紀錄共 ${unique.length} 筆`)
 
   let skippedCount = 0
 
@@ -254,20 +253,20 @@ async function syncRangeWithRedemptionCheck(fromDate, toDate) {
     try {
       const order = await db.getOrder(orderNo)
       if (!order) {
-        console.log(`[sync-range-redeem] 跳過（不在補跑區間內）: ${orderNo}`)
+        log.info('sync-range-redeem', '跳過，不在補跑區間', { orderNo })
         skippedCount++
         return null
       }
       return await processRedemptionRecord(orderNo, redeemDate, order)
     } catch (err) {
-      console.error(`[sync-range-redeem] 處理失敗 ${orderNo}:`, err.message)
+      log.error('sync-range-redeem', '處理失敗', { orderNo, error: err.message })
       return null
     }
   })
 
   const memberCount   = results.filter(r => r === 'member').length
   const notifiedCount = results.filter(r => r === 'notified').length
-  console.log(`[sync-range-redeem] 完成 已入會:${memberCount} 待複查:${notifiedCount} 跳過:${skippedCount}`)
+  log.info('sync-range-redeem', '完成', { memberCount, notifiedCount, skippedCount })
 
   return {
     ordersResult,

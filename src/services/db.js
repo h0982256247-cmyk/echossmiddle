@@ -198,24 +198,60 @@ async function getLastSentAt() {
 }
 
 async function updateLastSentAt() {
+  // upsert：row 不存在時自動建立，不需要手動 seed
   const { error } = await supabase
     .from('report_schedule')
-    .update({ last_sent_at: new Date().toISOString() })
-    .eq('id', 1)
+    .upsert({ id: 1, last_sent_at: new Date().toISOString() }, { onConflict: 'id' })
   if (error) throw new Error(`updateLastSentAt failed: ${error.message}`)
 }
 
 // ── Supabase Auth ─────────────────────────────────────────────
 
+const jwt = require('jsonwebtoken')
+
+/**
+ * 登入，回傳 accessToken / refreshToken / expiresAt
+ */
 async function authSignIn(email, password) {
   const { data, error } = await supabaseAuth.auth.signInWithPassword({ email, password })
   if (error) throw new Error(error.message)
-  if (!data.session) throw new Error('Email 尚未驗證，請先至信箱確認後再登入，或至 Supabase Dashboard 關閉 Email Confirmation')
-  return data.session.access_token
+  if (!data.session) throw new Error('Email 尚未驗證，請至 Supabase Dashboard → Authentication → Providers → Email 關閉 Confirm email')
+  return {
+    accessToken:  data.session.access_token,
+    refreshToken: data.session.refresh_token,
+    expiresAt:    data.session.expires_at,   // Unix timestamp (seconds)
+  }
 }
 
+/**
+ * 用 refresh token 換新 access token
+ */
+async function authRefresh(refreshToken) {
+  const { data, error } = await supabaseAuth.auth.refreshSession({ refresh_token: refreshToken })
+  if (error) throw new Error(error.message)
+  if (!data.session) throw new Error('Session 已過期，請重新登入')
+  return {
+    accessToken:  data.session.access_token,
+    refreshToken: data.session.refresh_token,
+    expiresAt:    data.session.expires_at,
+  }
+}
+
+/**
+ * 驗證 JWT：優先本地驗簽（零 latency），無 secret 時 fallback 到 Supabase API
+ */
 async function validateAuthToken(token) {
   if (!token) return false
+  const secret = process.env.SUPABASE_JWT_SECRET
+  if (secret) {
+    try {
+      jwt.verify(token, secret)
+      return true
+    } catch {
+      return false
+    }
+  }
+  // Fallback：沒設定 SUPABASE_JWT_SECRET 時走 API 驗證
   try {
     const { data: { user }, error } = await supabaseAuth.auth.getUser(token)
     return !error && !!user
@@ -243,5 +279,6 @@ module.exports = {
   getLastSentAt,
   updateLastSentAt,
   authSignIn,
+  authRefresh,
   validateAuthToken,
 }
