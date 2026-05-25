@@ -119,7 +119,7 @@ async function syncNewOrders(fromDate, toDate) {
         phone,
         email,
         orderDate,
-        amount: detailAmount || amount || amout || 0,
+        amount: detailAmount ?? amount ?? amout ?? 0,
       })
       log.info('sync-orders', '新增訂單', { orderNo, customerName })
       return true

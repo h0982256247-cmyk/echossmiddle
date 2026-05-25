@@ -98,17 +98,18 @@
   .stat-card.green  .stat-value { color: var(--green); }
   .stat-card.purple .stat-value { color: var(--purple); }
   .stat-card.cyan   .stat-value { color: var(--cyan); }
-  .stat-sub { font-size: 11px; color: var(--muted); }
+  .stat-sub { font-size: 12px; color: #8899aa; }
 
   /* ── SECTION LABEL ── */
   .section-label {
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: .1em;
-    color: var(--muted);
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: #8899aa;
     text-transform: uppercase;
     margin-bottom: 12px;
-    margin-top: 28px;
+    margin-top: 32px;
   }
 
   /* ── ACTION PANEL ── */
@@ -121,10 +122,10 @@
     transition: border-color .2s;
   }
   .action-card:hover { border-color: var(--border-hi); }
-  .action-card h3 { font-size: 13px; font-weight: 600; font-family: var(--mono); margin-bottom: 14px; letter-spacing: .03em; }
-  .action-row { display: flex; flex-direction: column; gap: 10px; }
+  .action-card h3 { font-size: 14px; font-weight: 600; font-family: var(--sans); margin-bottom: 14px; letter-spacing: .01em; }
+  .action-row { display: flex; flex-direction: column; gap: 12px; }
   .action-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .action-item-desc { font-size: 12px; color: var(--muted); flex: 1; }
+  .action-item-desc { font-size: 13px; color: #8899aa; flex: 1; line-height: 1.5; }
 
   /* ── BUTTONS ── */
   .btn {
@@ -198,17 +199,18 @@
 
   table { width: 100%; border-collapse: collapse; }
   th {
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: .07em;
-    color: var(--muted);
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: #8899aa;
     text-transform: uppercase;
-    padding: 10px 14px;
+    padding: 11px 14px;
     text-align: left;
     border-bottom: 1px solid var(--border);
     background: rgba(0,0,0,.2);
   }
-  td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 14px; }
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: rgba(255,255,255,.02); }
   .td-mono   { font-family: var(--mono); font-size: 11px; color: var(--muted); }
@@ -297,11 +299,11 @@
     background: var(--amber-lo);
   }
   .test-mode-text {
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: .07em;
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .02em;
     color: var(--muted);
-    text-transform: uppercase;
     white-space: nowrap;
     transition: color .15s;
   }
@@ -453,11 +455,10 @@
   }
   .login-logo-title span { color: var(--blue); }
   .login-logo-sub {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--muted);
-    letter-spacing: .1em;
-    text-transform: uppercase;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: #8899aa;
+    letter-spacing: .04em;
     margin-top: 5px;
   }
 
@@ -481,11 +482,11 @@
     gap: 8px;
   }
   .login-label {
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: .09em;
-    color: var(--muted);
-    text-transform: uppercase;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: .01em;
+    color: #8899aa;
   }
   .login-input {
     width: 100%;
@@ -566,7 +567,7 @@
       </div>
       <div class="login-logo-text">
         <div class="login-logo-title">農遊生活<span> / </span>後台</div>
-        <div class="login-logo-sub">Admin Dashboard</div>
+        <div class="login-logo-sub">管理後台，請登入以繼續</div>
       </div>
     </div>
 
@@ -575,7 +576,7 @@
     <!-- Fields -->
     <div class="login-fields">
       <div class="login-field">
-        <label class="login-label" for="login-email">Email</label>
+        <label class="login-label" for="login-email">電子信箱</label>
         <input type="email" id="login-email" class="login-input"
                placeholder="your@email.com" autocomplete="email"
                onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
@@ -597,14 +598,14 @@
 <header>
   <div class="logo">農遊生活<span> / </span>後台管理</div>
   <div class="header-right">
-    <div class="test-mode-wrap" id="test-mode-wrap" onclick="toggleTestMode()" title="開啟後所有信件只寄給自己，不寄給消費者">
-      <span class="test-mode-text" id="test-mode-text">Test Mode</span>
+    <div class="test-mode-wrap" id="test-mode-wrap" onclick="toggleTestMode()" title="測試模式：開啟後所有信件只寄到自己信箱，不會寄給真實消費者">
+      <span class="test-mode-text" id="test-mode-text">測試模式</span>
       <div class="toggle-track">
         <div class="toggle-knob"></div>
       </div>
     </div>
     <span class="last-refresh" id="last-refresh">—</span>
-    <button class="btn btn-ghost btn-sm" onclick="doLogout()">⏏ 登出</button>
+    <button class="btn btn-ghost btn-sm" onclick="doLogout()">登出</button>
   </div>
 </header>
 
@@ -615,56 +616,56 @@
     <div class="stat-card blue">
       <div class="stat-label">待核銷</div>
       <div class="stat-value" id="stat-pending">—</div>
-      <div class="stat-sub">已下單，尚未核銷</div>
+      <div class="stat-sub">已下單，等待消費者前來核銷</div>
     </div>
     <div class="stat-card amber">
       <div class="stat-label">待複查</div>
       <div class="stat-value" id="stat-review">—</div>
-      <div class="stat-sub">核銷後等待7天複查</div>
+      <div class="stat-sub">已核銷但尚未入會，7天內複查</div>
     </div>
     <div class="stat-card green">
       <div class="stat-label">已發點</div>
       <div class="stat-value" id="stat-pointed">—</div>
-      <div class="stat-sub">點數已成功發出</div>
+      <div class="stat-sub">消費者已入會，點數發送完成</div>
     </div>
     <div class="stat-card purple">
       <div class="stat-label">已結案</div>
       <div class="stat-value" id="stat-closed">—</div>
-      <div class="stat-sub">7天複查完成</div>
+      <div class="stat-sub">7天複查已完成，流程結束</div>
     </div>
     <div class="stat-card cyan">
-      <div class="stat-label">週報佇列</div>
+      <div class="stat-label">本週週報</div>
       <div class="stat-value" id="stat-queue">—</div>
-      <div class="stat-sub">等待寄出的週報B</div>
+      <div class="stat-sub">待寄出的未入會結案名單筆數</div>
     </div>
   </div>
 
   <!-- Actions -->
-  <div class="section-label">操作</div>
+  <div class="section-label">每日作業</div>
   <div class="action-panel">
     <div class="action-card">
       <h3>每日同步</h3>
       <div class="action-row">
         <div class="action-item">
-          <span class="action-item-desc">同步今日新訂單、核銷記錄，並執行到期複查</span>
+          <span class="action-item-desc">從 Rezio 拉取今日新訂單與核銷資料，並自動處理到期的7天複查（每日必按）</span>
           <button class="btn btn-blue" id="btn-daily-sync" onclick="doDailySync()">▶ 一鍵更新</button>
         </div>
         <div class="action-item">
-          <span class="action-item-desc">立即複查今日到期訂單，確認是否已入會並結案</span>
+          <span class="action-item-desc">單獨執行7天複查，確認已核銷但未入會的訂單是否已入會並結案（已含在一鍵更新內）</span>
           <button class="btn btn-amber" id="btn-check-expired" onclick="doCheckExpired()">↺ 7天複查</button>
         </div>
       </div>
     </div>
 
     <div class="action-card">
-      <h3>週報發送</h3>
+      <h3>週報寄送</h3>
       <div class="action-row">
         <div class="action-item">
-          <span class="action-item-desc">週報A：上週下單但未加入會員的清單（供農遊主動聯繫）</span>
+          <span class="action-item-desc">週報A：寄出上週下單但還沒入會的名單，附 Excel，供主動招攬入會使用</span>
           <button class="btn btn-green" id="btn-report-a" onclick="doSendReportA()">✉ 週報A</button>
         </div>
         <div class="action-item">
-          <span class="action-item-desc">週報B：核銷後7天仍未入會的結案清單（清空佇列）</span>
+          <span class="action-item-desc">週報B：寄出核銷後7天仍未入會的結案名單，附 Excel，寄出後自動清空佇列</span>
           <button class="btn btn-purple" id="btn-report-b" onclick="doSendReportB()">✉ 週報B</button>
         </div>
       </div>
@@ -674,11 +675,11 @@
   <!-- Sync Range -->
   <div class="section-label">補跑歷史資料</div>
   <div class="action-card" style="margin-bottom:4px">
-    <h3>指定日期區間同步</h3>
-    <p style="font-size:12px;color:var(--muted)">補跑 Rezio 歷史訂單與核銷，適合首次部署或停機後補資料</p>
+    <h3>指定日期區間重新同步</h3>
+    <p style="font-size:13px;color:#8899aa;margin-top:-6px">選擇日期區間，從 Rezio 重新拉取該期間的訂單與核銷資料。適合首次設定或補漏資料時使用。</p>
     <div class="date-range-row">
       <div class="date-field">
-        <label class="date-label" for="sync-from">起始日期</label>
+        <label class="date-label" for="sync-from">開始日期</label>
         <input type="date" id="sync-from" class="date-input">
       </div>
       <span class="date-sep">～</span>
@@ -686,7 +687,7 @@
         <label class="date-label" for="sync-to">結束日期</label>
         <input type="date" id="sync-to" class="date-input">
       </div>
-      <button class="btn btn-blue" id="btn-sync-range" onclick="doSyncRange()" style="height:40px">↓ 補跑</button>
+      <button class="btn btn-blue" id="btn-sync-range" onclick="doSyncRange()" style="height:40px">開始補跑</button>
     </div>
   </div>
 
@@ -710,15 +711,15 @@
         <thead>
           <tr>
             <th>姓名</th>
-            <th>手機</th>
-            <th>Email</th>
+            <th>手機號碼</th>
+            <th>電子信箱</th>
             <th>訂單號</th>
             <th>下單日期</th>
             <th>核銷日期</th>
-            <th>複查截止</th>
-            <th style="text-align:right">金額</th>
+            <th>複查截止日</th>
+            <th style="text-align:right">消費金額</th>
             <th>狀態</th>
-            <th>已發點</th>
+            <th>發點</th>
           </tr>
         </thead>
         <tbody id="orders-table-body">
@@ -896,7 +897,7 @@ function renderTestModeToggle(enabled) {
   const text = document.getElementById('test-mode-text')
   if (!wrap) return
   wrap.classList.toggle('active', !!enabled)
-  text.textContent = enabled ? 'Test Mode ON' : 'Test Mode'
+  text.textContent = enabled ? '測試模式 ON' : '測試模式'
 }
 
 function renderFilterTabs(activeFilter, stats, queueCount) {
@@ -995,8 +996,8 @@ async function toggleTestMode() {
     const data    = await apiPost('toggle-test-mode', { enabled: !current })
     renderTestModeToggle(data.testMode)
     toast(data.testMode
-      ? '🟡 Test Mode 開啟：信件只寄給自己'
-      : '🟢 Test Mode 關閉：恢復正常寄送', 'info')
+      ? '測試模式已開啟：所有信件只寄到你自己的信箱'
+      : '測試模式已關閉：信件恢復正常寄送給消費者', 'info')
   } catch (err) {
     toast('切換失敗：' + err.message, 'error')
   }
