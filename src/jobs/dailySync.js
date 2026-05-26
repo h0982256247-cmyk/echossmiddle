@@ -58,10 +58,11 @@ async function processRedemptionRecord(orderNo, redeemDate, order, { skipNotific
   const { isMember } = await echoss.isMember(order.phone)
 
   if (isMember) {
-    const updated = await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: true, status: '已發點' })
+    // RPC：原子寫入 redeem_date + is_member_at_redeem + status='已發點' + points_issued=true
+    // 一次 UPDATE 消除舊兩步驟（setRedeemed → markPointsIssued）中間 crash 的風險
+    const updated = await db.setRedeemedMember({ orderNo, redeemDate: actualRedeemDate })
     if (!updated) { log.info('redeem', '已被並發處理，跳過（會員）', { orderNo }); return null }
     await issuePoints(order.phone, order.amount)
-    await db.markPointsIssued(orderNo)
     log.info('redeem', '已入會，已發點', { orderNo, phone: order.phone })
     return 'member'
   }
@@ -198,22 +199,22 @@ async function checkExpiredOrders() {
     try {
       if (!phone) {
         log.warn('check-expired', '無手機欄位，加入週報並結案', { orderNo })
-        await db.addToWeeklyQueue({ orderNo, customerName: customer_name, phone, email, orderDate: order_date, redeemDate: redeem_date, amount })
-        const closed = await db.closeOrder(orderNo, false)
+        // RPC：原子結案 + 入週報佇列（兩步驟在同一 transaction，消除中間 crash 的風險）
+        const closed = await db.closeOrderAndEnqueue({ orderNo, customerName: customer_name, phone, email, orderDate: order_date, redeemDate: redeem_date, amount })
         if (!closed) { log.info('check-expired', '已被並發處理，跳過（無手機）', { orderNo }); return null }
         return 'queued'
       }
 
       const { isMember } = await echoss.isMember(phone)
       if (isMember) {
-        const updated = await db.markMemberAtCheck(orderNo)  // 原子更新：'待複查' → '已發點'
+        const updated = await db.markMemberAtCheck(orderNo)  // 原子更新：'待複查' → '已發點' + points_issued=true
         if (!updated) { log.info('check-expired', '已被並發處理，跳過（會員）', { orderNo }); return null }
         await issuePoints(phone, amount)                     // 只在成功更新後才發點
         log.info('check-expired', '7天複查已入會，狀態→已發點', { orderNo, phone })
         return 'member'
       } else {
-        await db.addToWeeklyQueue({ orderNo, customerName: customer_name, phone, email, orderDate: order_date, redeemDate: redeem_date, amount })
-        const closed = await db.closeOrder(orderNo, false)
+        // RPC：原子結案 + 入週報佇列（兩步驟在同一 transaction，消除中間 crash 的風險）
+        const closed = await db.closeOrderAndEnqueue({ orderNo, customerName: customer_name, phone, email, orderDate: order_date, redeemDate: redeem_date, amount })
         if (!closed) { log.info('check-expired', '已被並發處理，跳過（未入會）', { orderNo }); return null }
         log.info('check-expired', '仍未入會，加入週報並結案', { orderNo })
         return 'queued'

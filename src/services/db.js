@@ -122,12 +122,49 @@ async function closeOrder(orderNo, pointsIssued = false) {
   return !!(data && data.length > 0)
 }
 
+// ── RPC wrappers（原子多步驟操作）─────────────────────────────
+
+/**
+ * 原子標記「核銷時已入會」
+ * 一次 UPDATE 同時寫入 redeem_date / is_member_at_redeem / status='已發點' / points_issued=true
+ * 取代原本的 setRedeemed + markPointsIssued 兩步驟，消除中間 crash 造成的狀態不一致。
+ * @returns {boolean} true = 成功；false = 已被並發處理
+ */
+async function setRedeemedMember({ orderNo, redeemDate }) {
+  const { data, error } = await supabase.rpc('mark_order_redeemed_member', {
+    p_order_no:    orderNo,
+    p_redeem_date: redeemDate,
+  })
+  if (error) throw new Error(`setRedeemedMember failed: ${error.message}`)
+  return !!data
+}
+
+/**
+ * 原子結案 + 加入週報佇列（兩步驟在同一 DB transaction 內）
+ * 取代原本的 addToWeeklyQueue + closeOrder 兩步驟，消除中間 crash 造成的資料不一致。
+ * @returns {boolean} true = 成功結案並入佇列；false = 已被並發處理
+ */
+async function closeOrderAndEnqueue({ orderNo, customerName, phone, email, orderDate, redeemDate, amount }) {
+  const { data, error } = await supabase.rpc('close_order_and_enqueue', {
+    p_order_no:      orderNo,
+    p_customer_name: customerName || null,
+    p_phone:         phone        || null,
+    p_email:         email        || null,
+    p_order_date:    orderDate,
+    p_redeem_date:   redeemDate   || null,
+    p_amount:        amount       || 0,
+  })
+  if (error) throw new Error(`closeOrderAndEnqueue failed: ${error.message}`)
+  return !!data
+}
+
 async function getOrdersDueForCheck(today) {
   const { data, error } = await supabase
     .from('orders')
     .select('*')
     .lte('check_due_date', today)
-    .eq('is_member_at_redeem', false)
+    // 包含 false（查過不是會員）與 null（無手機、當時無法查），兩者都需要複查
+    .or('is_member_at_redeem.eq.false,is_member_at_redeem.is.null')
     .eq('status', '待複查')    // 排除已結案訂單，避免重複撈出
   if (error) throw new Error(`getOrdersDueForCheck failed: ${error.message}`)
   return data || []
@@ -302,10 +339,12 @@ module.exports = {
   upsertOrder,
   getOrder,
   setRedeemed,
+  setRedeemedMember,        // RPC：原子標記會員核銷（取代 setRedeemed+markPointsIssued）
   markPointsIssued,
   setCustomerNotified,
   markMemberAtCheck,
   closeOrder,
+  closeOrderAndEnqueue,     // RPC：原子結案+入週報佇列（取代 addToWeeklyQueue+closeOrder）
   getOrdersDueForCheck,
   getAllOrders,
   getOrderStats,
