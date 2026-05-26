@@ -50,6 +50,10 @@ async function getOrder(orderNo) {
   return data
 }
 
+/**
+ * 原子式標記核銷：只在 redeem_date IS NULL 時才更新（防止並發重複處理）
+ * @returns {boolean} true = 成功更新；false = 已被其他執行緒處理，跳過
+ */
 async function setRedeemed({ orderNo, redeemDate, isMember, checkDueDate, customerNotified, status }) {
   const updates = {
     redeem_date:         redeemDate,
@@ -59,8 +63,14 @@ async function setRedeemed({ orderNo, redeemDate, isMember, checkDueDate, custom
   if (customerNotified    !== undefined) updates.customer_notified = customerNotified
   if (status              !== undefined) updates.status            = status
 
-  const { error } = await supabase.from('orders').update(updates).eq('order_no', orderNo)
+  const { data, error } = await supabase
+    .from('orders')
+    .update(updates)
+    .eq('order_no', orderNo)
+    .is('redeem_date', null)   // 原子保護：只有尚未核銷的才更新
+    .select('order_no')
   if (error) throw new Error(`setRedeemed failed: ${error.message}`)
+  return !!(data && data.length > 0)
 }
 
 async function markPointsIssued(orderNo) {
@@ -79,12 +89,21 @@ async function setCustomerNotified(orderNo) {
   if (error) throw new Error(`setCustomerNotified failed: ${error.message}`)
 }
 
-// 結案：設定 status = '已結案'，可選補標 points_issued = true
+/**
+ * 原子式結案：只在 status = '待複查' 時才更新（防止並發重複處理）
+ * @returns {boolean} true = 成功結案；false = 已被其他執行緒處理，跳過
+ */
 async function closeOrder(orderNo, pointsIssued = false) {
   const updates = { status: '已結案' }
   if (pointsIssued) updates.points_issued = true
-  const { error } = await supabase.from('orders').update(updates).eq('order_no', orderNo)
+  const { data, error } = await supabase
+    .from('orders')
+    .update(updates)
+    .eq('order_no', orderNo)
+    .eq('status', '待複查')    // 原子保護：只有仍在複查中的才結案
+    .select('order_no')
   if (error) throw new Error(`closeOrder failed: ${error.message}`)
+  return !!(data && data.length > 0)
 }
 
 async function getOrdersDueForCheck(today) {
@@ -93,6 +112,7 @@ async function getOrdersDueForCheck(today) {
     .select('*')
     .lte('check_due_date', today)
     .eq('is_member_at_redeem', false)
+    .eq('status', '待複查')    // 排除已結案訂單，避免重複撈出
   if (error) throw new Error(`getOrdersDueForCheck failed: ${error.message}`)
   return data || []
 }

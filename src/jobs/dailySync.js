@@ -50,14 +50,16 @@ async function processRedemptionRecord(orderNo, redeemDate, order, { skipNotific
   if (!order.phone) {
     log.warn('redeem', '無手機欄位，無法查詢會員', { orderNo })
     const checkDueDate = addDays(actualRedeemDate, 7)
-    await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: null, checkDueDate, status: '待複查' })
+    const updated = await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: null, checkDueDate, status: '待複查' })
+    if (!updated) { log.info('redeem', '已被並發處理，跳過（無手機）', { orderNo }); return null }
     return null
   }
 
   const { isMember } = await echoss.isMember(order.phone)
 
   if (isMember) {
-    await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: true, status: '已發點' })
+    const updated = await db.setRedeemed({ orderNo, redeemDate: actualRedeemDate, isMember: true, status: '已發點' })
+    if (!updated) { log.info('redeem', '已被並發處理，跳過（會員）', { orderNo }); return null }
     await issuePoints(order.phone, order.amount)
     await db.markPointsIssued(orderNo)
     log.info('redeem', '已入會，已發點', { orderNo, phone: order.phone })
@@ -65,7 +67,7 @@ async function processRedemptionRecord(orderNo, redeemDate, order, { skipNotific
   }
 
   const checkDueDate = addDays(actualRedeemDate, 7)
-  await db.setRedeemed({
+  const updated = await db.setRedeemed({
     orderNo,
     redeemDate:       actualRedeemDate,
     isMember:         false,
@@ -73,6 +75,7 @@ async function processRedemptionRecord(orderNo, redeemDate, order, { skipNotific
     customerNotified: skipNotification ? null : false,
     status:           '待複查',
   })
+  if (!updated) { log.info('redeem', '已被並發處理，跳過（非會員）', { orderNo }); return null }
 
   if (skipNotification) {
     log.info('redeem', '補跑模式，跳過消費者通知', { orderNo })
@@ -196,19 +199,22 @@ async function checkExpiredOrders() {
       if (!phone) {
         log.warn('check-expired', '無手機欄位，加入週報並結案', { orderNo })
         await db.addToWeeklyQueue({ orderNo, customerName: customer_name, phone, email, orderDate: order_date, redeemDate: redeem_date, amount })
-        await db.closeOrder(orderNo, false)
+        const closed = await db.closeOrder(orderNo, false)
+        if (!closed) { log.info('check-expired', '已被並發處理，跳過（無手機）', { orderNo }); return null }
         return 'queued'
       }
 
       const { isMember } = await echoss.isMember(phone)
       if (isMember) {
-        await issuePoints(phone, amount)
-        await db.closeOrder(orderNo, true)
+        const closed = await db.closeOrder(orderNo, true)  // 原子結案
+        if (!closed) { log.info('check-expired', '已被並發處理，跳過（會員）', { orderNo }); return null }
+        await issuePoints(phone, amount)                   // 只在成功結案後才發點
         log.info('check-expired', '已入會，已發點並結案', { orderNo, phone })
         return 'member'
       } else {
         await db.addToWeeklyQueue({ orderNo, customerName: customer_name, phone, email, orderDate: order_date, redeemDate: redeem_date, amount })
-        await db.closeOrder(orderNo, false)
+        const closed = await db.closeOrder(orderNo, false)
+        if (!closed) { log.info('check-expired', '已被並發處理，跳過（未入會）', { orderNo }); return null }
         log.info('check-expired', '仍未入會，加入週報並結案', { orderNo })
         return 'queued'
       }
