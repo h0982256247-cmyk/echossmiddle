@@ -90,6 +90,22 @@ async function setCustomerNotified(orderNo) {
 }
 
 /**
+ * 7天複查確認入會：status → '已發點'，points_issued = true
+ * 只在 status = '待複查' 時才更新（原子保護）
+ * @returns {boolean} true = 成功；false = 已被並發處理
+ */
+async function markMemberAtCheck(orderNo) {
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ status: '已發點', points_issued: true })
+    .eq('order_no', orderNo)
+    .eq('status', '待複查')
+    .select('order_no')
+  if (error) throw new Error(`markMemberAtCheck failed: ${error.message}`)
+  return !!(data && data.length > 0)
+}
+
+/**
  * 原子式結案：只在 status = '待複查' 時才更新（防止並發重複處理）
  * @returns {boolean} true = 成功結案；false = 已被其他執行緒處理，跳過
  */
@@ -288,6 +304,7 @@ module.exports = {
   setRedeemed,
   markPointsIssued,
   setCustomerNotified,
+  markMemberAtCheck,
   closeOrder,
   getOrdersDueForCheck,
   getAllOrders,

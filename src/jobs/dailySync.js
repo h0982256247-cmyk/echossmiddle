@@ -206,10 +206,10 @@ async function checkExpiredOrders() {
 
       const { isMember } = await echoss.isMember(phone)
       if (isMember) {
-        const closed = await db.closeOrder(orderNo, true)  // 原子結案
-        if (!closed) { log.info('check-expired', '已被並發處理，跳過（會員）', { orderNo }); return null }
-        await issuePoints(phone, amount)                   // 只在成功結案後才發點
-        log.info('check-expired', '已入會，已發點並結案', { orderNo, phone })
+        const updated = await db.markMemberAtCheck(orderNo)  // 原子更新：'待複查' → '已發點'
+        if (!updated) { log.info('check-expired', '已被並發處理，跳過（會員）', { orderNo }); return null }
+        await issuePoints(phone, amount)                     // 只在成功更新後才發點
+        log.info('check-expired', '7天複查已入會，狀態→已發點', { orderNo, phone })
         return 'member'
       } else {
         await db.addToWeeklyQueue({ orderNo, customerName: customer_name, phone, email, orderDate: order_date, redeemDate: redeem_date, amount })
