@@ -7,7 +7,8 @@ const db = require('./services/db')
 const { generateReport } = require('./utils/report')
 const { sendReportA, sendReportB, diagnoseMail } = require('./utils/mailer')
 const { getTestMode, setTestMode } = require('./utils/config')
-const log = require('./utils/logger')
+const log      = require('./utils/logger')
+const syncLock = require('./utils/syncLock')
 
 const app  = express()
 const PORT = process.env.PORT || 3000
@@ -128,10 +129,16 @@ app.post('/api/run', (req, res) => {
   const secret = process.env.CRON_SECRET
   if (!secret || auth !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' })
 
+  if (!syncLock.acquire('cron')) {
+    log.warn('api/run', '已有 sync 在執行，本次跳過', syncLock.lockStatus())
+    return res.status(409).json({ ok: false, message: 'sync already running, skipped' })
+  }
+
   res.status(202).json({ ok: true, message: 'daily sync started' })
   runDailySync()
     .then(r  => log.info('api/run', '完成', r))
     .catch(e => log.error('api/run', '執行失敗', { error: e.message }))
+    .finally(() => syncLock.release())
 })
 
 // ── POST /api/run-weekly（pg_cron 每週一觸發）────────────────
@@ -140,10 +147,16 @@ app.post('/api/run-weekly', (req, res) => {
   const secret = process.env.CRON_SECRET
   if (!secret || auth !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' })
 
+  if (!syncLock.acquire('cron-weekly')) {
+    log.warn('api/run-weekly', '已有 sync 在執行，本次跳過', syncLock.lockStatus())
+    return res.status(409).json({ ok: false, message: 'sync already running, skipped' })
+  }
+
   res.status(202).json({ ok: true, message: 'weekly sync started' })
   Promise.all([runReportA(), runReportB()])
     .then(([a, b]) => log.info('api/run-weekly', '完成', { a, b }))
     .catch(e       => log.error('api/run-weekly', '執行失敗', { error: e.message }))
+    .finally(() => syncLock.release())
 })
 
 // ── GET /api/admin?action=status ──────────────────────────────
@@ -193,35 +206,53 @@ app.post('/api/admin', async (req, res) => {
   const { action } = req.query
 
   if (action === 'run-daily-sync') {
+    if (!syncLock.acquire('manual:run-daily-sync')) {
+      log.warn('run-daily-sync', '已有 sync 在執行，拒絕', syncLock.lockStatus())
+      return res.status(409).json({ ok: false, error: '目前有同步任務正在執行中，請稍後再試' })
+    }
     try {
       const result = await runDailySync()
       return res.json({ ok: true, result })
     } catch (err) {
       log.error('run-daily-sync', err.message)
       return res.status(500).json({ ok: false, error: err.message })
+    } finally {
+      syncLock.release()
     }
   }
 
   if (action === 'sync-range') {
+    const { from, to } = req.body
+    if (!from || !to) return res.status(400).json({ ok: false, error: '請提供 from 與 to 日期（YYYY-MM-DD）' })
+    if (from > to)    return res.status(400).json({ ok: false, error: 'from 不能晚於 to' })
+    if (!syncLock.acquire('manual:sync-range')) {
+      log.warn('sync-range', '已有 sync 在執行，拒絕', syncLock.lockStatus())
+      return res.status(409).json({ ok: false, error: '目前有同步任務正在執行中，請稍後再試' })
+    }
     try {
-      const { from, to } = req.body
-      if (!from || !to) return res.status(400).json({ ok: false, error: '請提供 from 與 to 日期（YYYY-MM-DD）' })
-      if (from > to)    return res.status(400).json({ ok: false, error: 'from 不能晚於 to' })
       const { ordersResult, redeemResult } = await syncRangeWithRedemptionCheck(from, to)
       return res.json({ ok: true, from, to, ordersResult, redeemResult })
     } catch (err) {
       log.error('sync-range', err.message)
       return res.status(500).json({ ok: false, error: err.message })
+    } finally {
+      syncLock.release()
     }
   }
 
   if (action === 'check-expired') {
+    if (!syncLock.acquire('manual:check-expired')) {
+      log.warn('check-expired', '已有 sync 在執行，拒絕', syncLock.lockStatus())
+      return res.status(409).json({ ok: false, error: '目前有同步任務正在執行中，請稍後再試' })
+    }
     try {
       const result = await checkExpiredOrders()
       return res.json({ ok: true, result })
     } catch (err) {
       log.error('check-expired', err.message)
       return res.status(500).json({ ok: false, error: err.message })
+    } finally {
+      syncLock.release()
     }
   }
 
