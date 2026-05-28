@@ -44,9 +44,11 @@ async function issuePoints(orderNo, phone, amount) {
   const points = Math.floor(Number(amount))
 
   // ── 1. 冪等性檢查 ──────────────────────────────────────────────
+  // 歷程裡已有 issued 記錄（可能是 timeout 後 Echoss 其實發成功的情況）→ 同步主表狀態，不重打 API
   const alreadyIssued = await db.hasSuccessfulPointIssuance(orderNo)
   if (alreadyIssued) {
-    log.info('points', '已有成功發點紀錄，跳過（冪等保護）', { orderNo })
+    await db.updatePointsStatus(orderNo, 'issued')
+    log.info('points', '歷程已有成功紀錄，同步狀態為 issued，跳過 API 呼叫', { orderNo })
     return
   }
 

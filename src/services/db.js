@@ -405,7 +405,8 @@ async function getOrdersNeedingPointRetry() {
   const { data, error } = await supabase
     .from('orders')
     .select('order_no, phone, amount, points_status')
-    .in('points_status', ['pending', 'failed'])   // timeout 不自動重試，需人工確認
+    // timeout 也納入重試：issuePoints 會先查歷程，有 issued 記錄就直接同步狀態，沒有才重打 API
+    .in('points_status', ['pending', 'failed', 'timeout'])
     .not('phone', 'is', null)
   if (error) throw new Error(`getOrdersNeedingPointRetry failed: ${error.message}`)
   return data || []
