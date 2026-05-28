@@ -44,11 +44,11 @@ async function issuePoints(orderNo, phone, amount) {
   const points = Math.floor(Number(amount))
 
   // ── 1. 冪等性檢查 ──────────────────────────────────────────────
-  // 歷程裡已有 issued 記錄（可能是 timeout 後 Echoss 其實發成功的情況）→ 同步主表狀態，不重打 API
+  // 我方歷程裡已有 issued → 不重打 API（保護 pending/failed 的重試路徑）
+  // 注意：timeout 訂單走 resolveTimeoutIssuance，不走這裡
   const alreadyIssued = await db.hasSuccessfulPointIssuance(orderNo)
   if (alreadyIssued) {
-    await db.updatePointsStatus(orderNo, 'issued')
-    log.info('points', '歷程已有成功紀錄，同步狀態為 issued，跳過 API 呼叫', { orderNo })
+    log.info('points', '歷程已有成功紀錄，跳過 API 呼叫（冪等保護）', { orderNo })
     return
   }
 
@@ -84,8 +84,38 @@ async function issuePoints(orderNo, phone, amount) {
 }
 
 /**
- * 重試 pending / failed 的發點訂單（每日 sync 的最後一步）
- * timeout 不自動重試（Echoss 可能已發點，重試有翻倍風險）
+ * timeout 訂單的專屬處理：先查 Echoss 發點歷程，再決定是否重打 API
+ *
+ * 流程：
+ *   1. 呼叫 echoss.getIssuanceHistory(orderNo)
+ *   2. wasIssued = true  → Echoss 確認已發 → 更新我方記錄為 issued，不重打 API
+ *   3. wasIssued = false → Echoss 確認未發 → 走正常 issuePoints 流程（含冪等保護）
+ */
+async function resolveTimeoutIssuance(orderNo, phone, amount) {
+  log.info('retry-points', 'timeout 訂單：查詢 Echoss 發點歷程', { orderNo })
+
+  const { wasIssued, echossStatus, raw } = await echoss.getIssuanceHistory(orderNo)
+
+  if (wasIssued) {
+    // Echoss 那邊有記錄 → 補建 issued 歷程紀錄並更新主表，不重打 API
+    const issuanceId = await db.createPointIssuance({ orderNo, points: Math.floor(Number(amount)) })
+    await db.completePointIssuance(issuanceId, { status: 'issued', echossStatus, echossResponse: raw })
+    await db.updatePointsStatus(orderNo, echossStatus ?? 'issued')
+    log.info('retry-points', 'Echoss 確認已發點，補記錄完成', { orderNo, echossStatus })
+    return 'ok'
+  }
+
+  // Echoss 確認沒發 → 正常重試（issuePoints 內含冪等保護）
+  log.info('retry-points', 'Echoss 確認未發點，進行重試', { orderNo })
+  await issuePoints(orderNo, phone, amount)
+  return 'ok'
+}
+
+/**
+ * 重試需補發點的訂單（每日 sync 的最後一步）
+ *
+ * pending / failed → 直接重打 API（這兩種狀態代表 Echoss 肯定沒發）
+ * timeout          → 先查 Echoss 歷程確認後再決定（防止翻倍）
  */
 async function retryPendingIssuances() {
   const orders = await db.getOrdersNeedingPointRetry()
@@ -95,6 +125,9 @@ async function retryPendingIssuances() {
 
   const results = await processInBatches(orders, async (order) => {
     try {
+      if (order.points_status === 'timeout') {
+        return await resolveTimeoutIssuance(order.order_no, order.phone, order.amount)
+      }
       await issuePoints(order.order_no, order.phone, order.amount)
       return 'ok'
     } catch {
