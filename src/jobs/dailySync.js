@@ -163,8 +163,8 @@ async function processRedemptionRecord(orderNo, redeemDate, order, { skipNotific
   const today            = getTodayDateString()
   const actualRedeemDate = redeemDate ? toTaipeiDateString(redeemDate) : today
 
-  // 已處理過此核銷則跳過
-  if (order.redeem_date && order.is_member_at_redeem !== null) return null
+  // 已處理過此核銷則跳過（redeem_date 已設定代表該核銷已入庫，含無手機的情況）
+  if (order.redeem_date) return null
 
   if (!order.phone) {
     log.warn('redeem', '無手機欄位，無法查詢會員', { orderNo })
@@ -287,7 +287,7 @@ async function syncRedemptions(fromDate, toDate) {
         if (!rezioOrder) { log.warn('sync-redeem', '找不到訂單', { orderNo }); return null }
         const { phone, email, amount } = await rezio.getOrderDetail(orderNo)
         const customerName = `${rezioOrder.contactLastName || ''}${rezioOrder.contactFirstName || ''}`.trim()
-        const orderDate    = rezioOrder.createdAt ? rezioOrder.toTaipeiDateString(createdAt) : today
+        const orderDate    = toTaipeiDateString(rezioOrder.createdAt) ?? today
         await db.upsertOrder({ orderNo, customerName, phone, email, orderDate, amount })
         order = await db.getOrder(orderNo)
       }

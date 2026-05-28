@@ -284,22 +284,30 @@ app.post('/api/admin', async (req, res) => {
   }
 
   if (action === 'send-report-b') {
+    if (!tryAcquire('manual:send-report-b', 'send-report-b'))
+      return res.status(409).json({ ok: false, error: '目前有同步任務正在執行中，請稍後再試' })
     try {
       const result = await runReportB()
       return res.json({ ok: true, ...result })
     } catch (err) {
       log.error('send-report-b', err.message)
       return res.status(500).json({ ok: false, error: err.message })
+    } finally {
+      syncLock.release()
     }
   }
 
   if (action === 'send-report-a') {
+    if (!tryAcquire('manual:send-report-a', 'send-report-a'))
+      return res.status(409).json({ ok: false, error: '目前有同步任務正在執行中，請稍後再試' })
     try {
       const result = await runReportA()
       return res.json({ ok: true, ...result })
     } catch (err) {
       log.error('send-report-a', err.message)
       return res.status(500).json({ ok: false, error: err.message })
+    } finally {
+      syncLock.release()
     }
   }
 

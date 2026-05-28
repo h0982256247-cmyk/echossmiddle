@@ -404,10 +404,10 @@ const TIMEOUT_COOLDOWN_MS = 30 * 60 * 1000
 /**
  * 撈出需要重試發點的訂單
  *
- * pending / failed  → 直接納入（確定 Echoss 沒發）
- * timeout           → 只撈最近一筆 point_issuances 的 attempted_at
- *                     距今已超過 TIMEOUT_COOLDOWN_MS 的，才納入重試
- *                     （避免同一輪 sync 裡立刻重試，Echoss 可能還沒寫入查詢結果）
+ * pending / failed → 直接納入（確定 Echoss 沒發）
+ * timeout          → 只有「最近一筆 timeout 記錄」超過冷卻期才納入
+ *                    用 RPC 取每筆訂單的最新 attempted_at，在 JS 過濾
+ *                    （避免舊記錄通過 SQL filter 而遮蔽最近一次仍在冷卻中的情況）
  */
 async function getOrdersNeedingPointRetry() {
   const cooldownCutoff = new Date(Date.now() - TIMEOUT_COOLDOWN_MS).toISOString()
@@ -420,24 +420,34 @@ async function getOrdersNeedingPointRetry() {
     .not('phone', 'is', null)
   if (e1) throw new Error(`getOrdersNeedingPointRetry(normal) failed: ${e1.message}`)
 
-  // timeout：需確認最近一次 attempt 已超過冷卻期
-  // 利用 Supabase 的 inner join via select 取最新 attempt 時間
-  const { data: timeoutOrders, error: e2 } = await supabase
+  // timeout：撈候選訂單，再用各自最新一筆 point_issuances 做冷卻判斷
+  const { data: timeoutCandidates, error: e2 } = await supabase
     .from('orders')
-    .select(`
-      order_no, phone, amount, points_status,
-      point_issuances!inner(attempted_at)
-    `)
+    .select('order_no, phone, amount, points_status')
     .eq('points_status', 'timeout')
     .not('phone', 'is', null)
-    .eq('point_issuances.status', 'timeout')
-    .lt('point_issuances.attempted_at', cooldownCutoff)
   if (e2) throw new Error(`getOrdersNeedingPointRetry(timeout) failed: ${e2.message}`)
 
-  // 合併、去重（一筆訂單可能有多筆 timeout issuance，只保留一次）
-  const seen = new Set()
-  const all  = [...(normalOrders || []), ...(timeoutOrders || [])]
-  return all.filter(o => seen.has(o.order_no) ? false : seen.add(o.order_no))
+  const timeoutOrders = []
+  for (const order of (timeoutCandidates || [])) {
+    // 取這筆訂單最近一筆 timeout issuance 的時間
+    const { data: latest, error: e3 } = await supabase
+      .from('point_issuances')
+      .select('attempted_at')
+      .eq('order_no', order.order_no)
+      .eq('status', 'timeout')
+      .order('attempted_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (e3) throw new Error(`getOrdersNeedingPointRetry(latest timeout) failed: ${e3.message}`)
+
+    // 最近一筆超過冷卻期才允許重試
+    if (latest && latest.attempted_at < cooldownCutoff) {
+      timeoutOrders.push(order)
+    }
+  }
+
+  return [...(normalOrders || []), ...timeoutOrders]
 }
 
 module.exports = {
