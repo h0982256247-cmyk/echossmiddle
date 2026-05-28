@@ -397,19 +397,47 @@ async function updatePointsStatus(orderNo, pointsStatus) {
   if (error) throw new Error(`updatePointsStatus failed: ${error.message}`)
 }
 
+// timeout 冷卻期：至少等 30 分鐘後才重試
+// 防止同一輪 sync 裡 timeout → 立即重試，Echoss 可能仍在處理第一次請求
+const TIMEOUT_COOLDOWN_MS = 30 * 60 * 1000
+
 /**
- * 撈出需要重試發點的訂單（points_status = 'pending' / 'failed' / 'timeout'）
- * 'timeout' 需人工判斷是否安全重試（Echoss 可能已發點）
+ * 撈出需要重試發點的訂單
+ *
+ * pending / failed  → 直接納入（確定 Echoss 沒發）
+ * timeout           → 只撈最近一筆 point_issuances 的 attempted_at
+ *                     距今已超過 TIMEOUT_COOLDOWN_MS 的，才納入重試
+ *                     （避免同一輪 sync 裡立刻重試，Echoss 可能還沒寫入查詢結果）
  */
 async function getOrdersNeedingPointRetry() {
-  const { data, error } = await supabase
+  const cooldownCutoff = new Date(Date.now() - TIMEOUT_COOLDOWN_MS).toISOString()
+
+  // pending / failed：直接撈
+  const { data: normalOrders, error: e1 } = await supabase
     .from('orders')
     .select('order_no, phone, amount, points_status')
-    // timeout 也納入重試：issuePoints 會先查歷程，有 issued 記錄就直接同步狀態，沒有才重打 API
-    .in('points_status', ['pending', 'failed', 'timeout'])
+    .in('points_status', ['pending', 'failed'])
     .not('phone', 'is', null)
-  if (error) throw new Error(`getOrdersNeedingPointRetry failed: ${error.message}`)
-  return data || []
+  if (e1) throw new Error(`getOrdersNeedingPointRetry(normal) failed: ${e1.message}`)
+
+  // timeout：需確認最近一次 attempt 已超過冷卻期
+  // 利用 Supabase 的 inner join via select 取最新 attempt 時間
+  const { data: timeoutOrders, error: e2 } = await supabase
+    .from('orders')
+    .select(`
+      order_no, phone, amount, points_status,
+      point_issuances!inner(attempted_at)
+    `)
+    .eq('points_status', 'timeout')
+    .not('phone', 'is', null)
+    .eq('point_issuances.status', 'timeout')
+    .lt('point_issuances.attempted_at', cooldownCutoff)
+  if (e2) throw new Error(`getOrdersNeedingPointRetry(timeout) failed: ${e2.message}`)
+
+  // 合併、去重（一筆訂單可能有多筆 timeout issuance，只保留一次）
+  const seen = new Set()
+  const all  = [...(normalOrders || []), ...(timeoutOrders || [])]
+  return all.filter(o => seen.has(o.order_no) ? false : seen.add(o.order_no))
 }
 
 module.exports = {
