@@ -28,11 +28,82 @@ function addDays(dateStr, days) {
   return d.toISOString().slice(0, 10)
 }
 
-/** 點數計算：1元 = 1點（待串接 Echoss 發點 API） */
-async function issuePoints(phone, amount) {
+/**
+ * 發點（含冪等保護 + 旅程記錄）
+ *
+ * 流程：
+ *   1. 冪等檢查：point_issuances 已有 status='issued' → 跳過（防止重複發點）
+ *   2. 建立 pending 記錄（DB 先留下足跡）
+ *   3. 呼叫 Echoss API
+ *   4. 依回應更新 point_issuances + orders.points_status
+ *
+ * timeout 時：orders.points_status='timeout'，不自動重試（人工確認 Echoss 端是否已發）
+ * failed  時：orders.points_status='failed'，下一輪 sync 的 retryPendingIssuances 會重試
+ */
+async function issuePoints(orderNo, phone, amount) {
   const points = Math.floor(Number(amount))
-  // TODO: 待串接 Echoss 發點 API
-  log.info('points', '發點佔位（Echoss API 待串接）', { phone, points })
+
+  // ── 1. 冪等性檢查 ──────────────────────────────────────────────
+  const alreadyIssued = await db.hasSuccessfulPointIssuance(orderNo)
+  if (alreadyIssued) {
+    log.info('points', '已有成功發點紀錄，跳過（冪等保護）', { orderNo })
+    return
+  }
+
+  // ── 2. 建立 pending 旅程記錄 ───────────────────────────────────
+  const issuanceId = await db.createPointIssuance({ orderNo, points })
+  log.info('points', '發點開始', { orderNo, phone, points, issuanceId })
+
+  // ── 3. 呼叫 Echoss API ─────────────────────────────────────────
+  try {
+    const { echossStatus, raw } = await echoss.issuePoints(phone, points, orderNo)
+
+    // ── 4a. 成功：更新記錄與主表 ──────────────────────────────────
+    await db.completePointIssuance(issuanceId, { status: 'issued', echossStatus, echossResponse: raw })
+    await db.updatePointsStatus(orderNo, echossStatus ?? 'issued')
+    log.info('points', '發點成功', { orderNo, phone, points, echossStatus })
+
+  } catch (err) {
+    // ── 4b. 失敗：區分 timeout vs 一般錯誤 ───────────────────────
+    const isTimeout = err.code === 'ECONNABORTED' || /timeout/i.test(err.message)
+    const failStatus = isTimeout ? 'timeout' : 'failed'
+
+    await db.completePointIssuance(issuanceId, { status: failStatus, errorMsg: err.message })
+    await db.updatePointsStatus(orderNo, failStatus)
+
+    if (isTimeout) {
+      // timeout：Echoss 可能已發點，不自動重試，需人工確認
+      log.warn('points', 'Echoss API timeout，需人工確認是否已發點', { orderNo, error: err.message })
+    } else {
+      log.error('points', '發點失敗，下輪將重試', { orderNo, error: err.message })
+    }
+    // 不 rethrow：讓上層流程繼續（發點失敗不應中斷整批 sync）
+  }
+}
+
+/**
+ * 重試 pending / failed 的發點訂單（每日 sync 的最後一步）
+ * timeout 不自動重試（Echoss 可能已發點，重試有翻倍風險）
+ */
+async function retryPendingIssuances() {
+  const orders = await db.getOrdersNeedingPointRetry()
+  if (orders.length === 0) return { retried: 0, succeeded: 0, failed: 0 }
+
+  log.info('retry-points', `待重試發點訂單 ${orders.length} 筆`)
+
+  const results = await processInBatches(orders, async (order) => {
+    try {
+      await issuePoints(order.order_no, order.phone, order.amount)
+      return 'ok'
+    } catch {
+      return 'fail'
+    }
+  })
+
+  const succeeded = results.filter(r => r === 'ok').length
+  const failed    = results.filter(r => r === 'fail').length
+  log.info('retry-points', '完成', { retried: orders.length, succeeded, failed })
+  return { retried: orders.length, succeeded, failed }
 }
 
 // ── 核銷處理邏輯（syncRedemptions / syncRangeWithRedemptionCheck 共用）──
@@ -58,12 +129,12 @@ async function processRedemptionRecord(orderNo, redeemDate, order, { skipNotific
   const { isMember } = await echoss.isMember(order.phone)
 
   if (isMember) {
-    // RPC：原子寫入 redeem_date + is_member_at_redeem + status='已發點' + points_issued=true
-    // 一次 UPDATE 消除舊兩步驟（setRedeemed → markPointsIssued）中間 crash 的風險
+    // RPC：原子寫入 redeem_date + is_member_at_redeem + status='已發點' + points_status='pending'
+    // 一次 UPDATE 確保 DB 狀態一致；Echoss API 成功後才把 points_status 改成 'issued'
     const updated = await db.setRedeemedMember({ orderNo, redeemDate: actualRedeemDate })
     if (!updated) { log.info('redeem', '已被並發處理，跳過（會員）', { orderNo }); return null }
-    await issuePoints(order.phone, order.amount)
-    log.info('redeem', '已入會，已發點', { orderNo, phone: order.phone })
+    await issuePoints(orderNo, order.phone, order.amount)
+    log.info('redeem', '已入會，發點流程完成', { orderNo, phone: order.phone })
     return 'member'
   }
 
@@ -207,9 +278,9 @@ async function checkExpiredOrders() {
 
       const { isMember } = await echoss.isMember(phone)
       if (isMember) {
-        const updated = await db.markMemberAtCheck(orderNo)  // 原子更新：'待複查' → '已發點' + points_issued=true
+        const updated = await db.markMemberAtCheck(orderNo)  // 原子更新：'待複查' → '已發點'，points_status='pending'
         if (!updated) { log.info('check-expired', '已被並發處理，跳過（會員）', { orderNo }); return null }
-        await issuePoints(phone, amount)                     // 只在成功更新後才發點
+        await issuePoints(orderNo, phone, amount)            // 只在成功更新後才發點
         log.info('check-expired', '7天複查已入會，狀態→已發點', { orderNo, phone })
         return 'member'
       } else {
@@ -240,8 +311,10 @@ async function runDailySync() {
   const ordersResult  = await syncNewOrders(today, today)
   const redeemResult  = await syncRedemptions(today, today)
   const expiredResult = await checkExpiredOrders()
+  // 第四步：重試前幾輪失敗的發點（pending/failed；timeout 不自動重試）
+  const retryResult   = await retryPendingIssuances()
 
-  return { ordersResult, redeemResult, expiredResult }
+  return { ordersResult, redeemResult, expiredResult, retryResult }
 }
 
 // ── 補跑專用：先同步訂單，再查這批訂單的核銷狀態 ─────────────
@@ -290,4 +363,4 @@ async function syncRangeWithRedemptionCheck(fromDate, toDate) {
   }
 }
 
-module.exports = { runDailySync, checkExpiredOrders, processInBatches, syncRangeWithRedemptionCheck }
+module.exports = { runDailySync, checkExpiredOrders, processInBatches, syncRangeWithRedemptionCheck, retryPendingIssuances }

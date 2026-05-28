@@ -834,7 +834,7 @@
             <th>截止日</th>
             <th style="text-align:right">消費金額</th>
             <th>狀態</th>
-            <th>發點</th>
+            <th>點數狀態</th>
           </tr>
         </thead>
         <tbody id="orders-table-body">
@@ -1102,7 +1102,7 @@ function renderTable(orders, total) {
       <td class="td-mono">${esc(r.check_due_date) || '—'}</td>
       <td class="td-amount">NT$ ${Number(r.amount || 0).toLocaleString()}</td>
       <td>${statusBadge(r.status)}</td>
-      <td>${pointsBadge(r.points_issued, r.redeem_date)}</td>
+      <td>${pointsStatusBadge(r.points_status, r.redeem_date)}</td>
     </tr>
   `).join('')
 }
@@ -1144,12 +1144,23 @@ function statusBadge(status) {
   return `<span class="badge ${map[status] || 'badge-muted'}">${esc(status) || '—'}</span>`
 }
 
-function pointsBadge(issued, redeemDate) {
-  if (issued === true)
-    return '<span style="color:var(--green);font-family:var(--mono);font-size:13px;font-weight:600;">✓</span>'
-  if (redeemDate)
-    return '<span style="color:var(--red);font-family:var(--mono);font-size:13px;font-weight:600;">✗</span>'
-  return '<span style="color:var(--muted);font-family:var(--mono);font-size:12px;">—</span>'
+const _POINTS_STATUS_MAP = {
+  issued:              { label: 'issued',    color: 'var(--green)'  },
+  pending:             { label: 'pending',   color: 'var(--amber)'  },
+  failed:              { label: 'failed',    color: 'var(--red)'    },
+  timeout:             { label: 'timeout',   color: 'var(--purple)' },
+  pending_integration: { label: 'pending',   color: 'var(--amber)'  },
+}
+
+function pointsStatusBadge(pointsStatus, redeemDate) {
+  if (!pointsStatus) {
+    // 尚未進入發點流程（未核銷，或核銷但不是會員）
+    return '<span style="color:var(--muted);font-family:var(--mono);font-size:12px;">—</span>'
+  }
+  const cfg = _POINTS_STATUS_MAP[pointsStatus]
+  const label = cfg?.label ?? pointsStatus   // 未知狀態直接顯示 Echoss 原始字串
+  const color = cfg?.color ?? 'var(--muted)'
+  return `<span style="color:${color};font-family:var(--mono);font-size:12px;font-weight:600;">${label}</span>`
 }
 
 // ── TEST MODE ──────────────────────────────────────────────────

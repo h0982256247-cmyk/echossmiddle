@@ -90,14 +90,14 @@ async function setCustomerNotified(orderNo) {
 }
 
 /**
- * 7天複查確認入會：status → '已發點'，points_issued = true
+ * 7天複查確認入會：status → '已發點'，points_status → 'pending'
  * 只在 status = '待複查' 時才更新（原子保護）
  * @returns {boolean} true = 成功；false = 已被並發處理
  */
 async function markMemberAtCheck(orderNo) {
   const { data, error } = await supabase
     .from('orders')
-    .update({ status: '已發點', points_issued: true })
+    .update({ status: '已發點', points_status: 'pending' })
     .eq('order_no', orderNo)
     .eq('status', '待複查')
     .select('order_no')
@@ -334,6 +334,83 @@ async function validateAuthToken(token) {
   }
 }
 
+// ── Point Issuances（發點旅程記錄）─────────────────────────────
+
+/**
+ * 建立發點旅程記錄（status='pending'，Echoss API 呼叫前插入）
+ * @returns {number} 新記錄的 id
+ */
+async function createPointIssuance({ orderNo, points }) {
+  const { data, error } = await supabase
+    .from('point_issuances')
+    .insert({ order_no: orderNo, points, status: 'pending' })
+    .select('id')
+    .single()
+  if (error) throw new Error(`createPointIssuance failed: ${error.message}`)
+  return data.id
+}
+
+/**
+ * 完成發點旅程記錄（Echoss API 回應後更新）
+ * @param {number} id
+ * @param {{ status, echossStatus?, echossResponse?, errorMsg? }} result
+ */
+async function completePointIssuance(id, { status, echossStatus, echossResponse, errorMsg }) {
+  const { error } = await supabase
+    .from('point_issuances')
+    .update({
+      status,
+      echoss_status:   echossStatus   ?? null,
+      echoss_response: echossResponse ?? null,
+      error_msg:       errorMsg       ?? null,
+      completed_at:    new Date().toISOString(),
+    })
+    .eq('id', id)
+  if (error) throw new Error(`completePointIssuance failed: ${error.message}`)
+}
+
+/**
+ * 冪等性檢查：此訂單是否已有成功發點紀錄
+ * @returns {boolean}
+ */
+async function hasSuccessfulPointIssuance(orderNo) {
+  const { data, error } = await supabase
+    .from('point_issuances')
+    .select('id')
+    .eq('order_no', orderNo)
+    .eq('status', 'issued')
+    .limit(1)
+  if (error) throw new Error(`hasSuccessfulPointIssuance failed: ${error.message}`)
+  return !!(data && data.length > 0)
+}
+
+/**
+ * 更新 orders.points_status（Echoss API 回應後同步到主表）
+ * @param {string} orderNo
+ * @param {string} pointsStatus - 'issued' / 'failed' / 'timeout' / 或 Echoss 原始狀態字串
+ */
+async function updatePointsStatus(orderNo, pointsStatus) {
+  const { error } = await supabase
+    .from('orders')
+    .update({ points_status: pointsStatus })
+    .eq('order_no', orderNo)
+  if (error) throw new Error(`updatePointsStatus failed: ${error.message}`)
+}
+
+/**
+ * 撈出需要重試發點的訂單（points_status = 'pending' / 'failed' / 'timeout'）
+ * 'timeout' 需人工判斷是否安全重試（Echoss 可能已發點）
+ */
+async function getOrdersNeedingPointRetry() {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('order_no, phone, amount, points_status')
+    .in('points_status', ['pending', 'failed'])   // timeout 不自動重試，需人工確認
+    .not('phone', 'is', null)
+  if (error) throw new Error(`getOrdersNeedingPointRetry failed: ${error.message}`)
+  return data || []
+}
+
 module.exports = {
   orderExists,
   upsertOrder,
@@ -358,4 +435,10 @@ module.exports = {
   authSignIn,
   authRefresh,
   validateAuthToken,
+  // Point Issuances
+  createPointIssuance,
+  completePointIssuance,
+  hasSuccessfulPointIssuance,
+  updatePointsStatus,
+  getOrdersNeedingPointRetry,
 }
