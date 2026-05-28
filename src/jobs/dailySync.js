@@ -18,8 +18,21 @@ async function processInBatches(items, fn) {
   return results
 }
 
+const _taipeiFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei' })
+
 function getTodayDateString() {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei' }).format(new Date())
+  return _taipeiFormat.format(new Date())
+}
+
+/**
+ * 將任意 datetime 字串轉換為台北時間的日期字串（YYYY-MM-DD）
+ * 解決 Rezio API 若回傳 UTC datetime，直接 slice(0,10) 會在凌晨 0–8 點記錯日的問題
+ * 已是純日期格式（YYYY-MM-DD）則直接回傳，不再轉換
+ */
+function toTaipeiDateString(datetimeStr) {
+  if (!datetimeStr) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datetimeStr)) return datetimeStr
+  return _taipeiFormat.format(new Date(datetimeStr))
 }
 
 function addDays(dateStr, days) {
@@ -148,7 +161,7 @@ async function retryPendingIssuances() {
  */
 async function processRedemptionRecord(orderNo, redeemDate, order, { skipNotification = false } = {}) {
   const today            = getTodayDateString()
-  const actualRedeemDate = redeemDate || today
+  const actualRedeemDate = redeemDate ? toTaipeiDateString(redeemDate) : today
 
   // 已處理過此核銷則跳過
   if (order.redeem_date && order.is_member_at_redeem !== null) return null
@@ -229,7 +242,7 @@ async function syncNewOrders(fromDate, toDate) {
 
       const { phone, email, amount: detailAmount } = await rezio.getOrderDetail(orderNo)
       const customerName = `${contactLastName || ''}${contactFirstName || ''}`.trim()
-      const orderDate    = createdAt ? createdAt.slice(0, 10) : today
+      const orderDate    = createdAt ? toTaipeiDateString(createdAt) : today
 
       await db.upsertOrder({
         orderNo,
@@ -274,7 +287,7 @@ async function syncRedemptions(fromDate, toDate) {
         if (!rezioOrder) { log.warn('sync-redeem', '找不到訂單', { orderNo }); return null }
         const { phone, email, amount } = await rezio.getOrderDetail(orderNo)
         const customerName = `${rezioOrder.contactLastName || ''}${rezioOrder.contactFirstName || ''}`.trim()
-        const orderDate    = rezioOrder.createdAt ? rezioOrder.createdAt.slice(0, 10) : today
+        const orderDate    = rezioOrder.createdAt ? rezioOrder.toTaipeiDateString(createdAt) : today
         await db.upsertOrder({ orderNo, customerName, phone, email, orderDate, amount })
         order = await db.getOrder(orderNo)
       }

@@ -5,7 +5,7 @@ const { runDailySync, checkExpiredOrders, processInBatches, syncRangeWithRedempt
 const echoss = require('./services/echoss')
 const db = require('./services/db')
 const { generateReport } = require('./utils/report')
-const { sendReportA, sendReportB, diagnoseMail } = require('./utils/mailer')
+const { sendReportA, sendReportB, diagnoseMail, sendSyncAlert } = require('./utils/mailer')
 const { getTestMode, setTestMode } = require('./utils/config')
 const log      = require('./utils/logger')
 const syncLock = require('./utils/syncLock')
@@ -123,21 +123,41 @@ async function runReportB() {
   return { skipped: false, message: `週報B已寄出，共 ${records.length} 筆`, count: records.length }
 }
 
+// ── 共用：取得鎖（含 stale 警告）────────────────────────────
+function tryAcquire(by, logTag) {
+  const { ok, staleForced } = syncLock.acquire(by)
+  if (!ok) {
+    log.warn(logTag, '已有 sync 在執行，本次跳過', syncLock.lockStatus())
+    return false
+  }
+  if (staleForced) {
+    log.warn(logTag, `⚠️ 舊鎖已逾時（${syncLock.LOCK_TIMEOUT_MS / 60000} 分鐘），強制釋放後重新取得`, { by })
+    sendSyncAlert({
+      jobName:  by,
+      error:    `鎖逾時（超過 ${syncLock.LOCK_TIMEOUT_MS / 60000} 分鐘），系統已強制釋放並重新啟動同步`,
+      lockedBy: by,
+      at:       new Date().toISOString(),
+    })
+  }
+  return true
+}
+
 // ── POST /api/run（pg_cron 每小時觸發）───────────────────────
 app.post('/api/run', (req, res) => {
   const auth   = req.headers['authorization'] || ''
   const secret = process.env.CRON_SECRET
   if (!secret || auth !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' })
 
-  if (!syncLock.acquire('cron')) {
-    log.warn('api/run', '已有 sync 在執行，本次跳過', syncLock.lockStatus())
+  if (!tryAcquire('cron', 'api/run'))
     return res.status(409).json({ ok: false, message: 'sync already running, skipped' })
-  }
 
   res.status(202).json({ ok: true, message: 'daily sync started' })
   runDailySync()
     .then(r  => log.info('api/run', '完成', r))
-    .catch(e => log.error('api/run', '執行失敗', { error: e.message }))
+    .catch(e => {
+      log.error('api/run', '執行失敗', { error: e.message })
+      sendSyncAlert({ jobName: 'daily sync (cron)', error: e.message, lockedBy: 'cron', at: new Date().toISOString() })
+    })
     .finally(() => syncLock.release())
 })
 
@@ -147,15 +167,16 @@ app.post('/api/run-weekly', (req, res) => {
   const secret = process.env.CRON_SECRET
   if (!secret || auth !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' })
 
-  if (!syncLock.acquire('cron-weekly')) {
-    log.warn('api/run-weekly', '已有 sync 在執行，本次跳過', syncLock.lockStatus())
+  if (!tryAcquire('cron-weekly', 'api/run-weekly'))
     return res.status(409).json({ ok: false, message: 'sync already running, skipped' })
-  }
 
   res.status(202).json({ ok: true, message: 'weekly sync started' })
   Promise.all([runReportA(), runReportB()])
     .then(([a, b]) => log.info('api/run-weekly', '完成', { a, b }))
-    .catch(e       => log.error('api/run-weekly', '執行失敗', { error: e.message }))
+    .catch(e => {
+      log.error('api/run-weekly', '執行失敗', { error: e.message })
+      sendSyncAlert({ jobName: 'weekly sync (cron)', error: e.message, lockedBy: 'cron-weekly', at: new Date().toISOString() })
+    })
     .finally(() => syncLock.release())
 })
 
@@ -189,6 +210,7 @@ app.get('/api/admin', async (req, res) => {
         lastSentAt:      lastSentAt?.toISOString() || null,
         now:             new Date().toISOString(),
         testMode:        getTestMode(),
+        syncLock:        syncLock.lockStatus(),
       })
     } catch (err) {
       log.error('api/admin', 'status 失敗', { error: err.message })
@@ -206,15 +228,14 @@ app.post('/api/admin', async (req, res) => {
   const { action } = req.query
 
   if (action === 'run-daily-sync') {
-    if (!syncLock.acquire('manual:run-daily-sync')) {
-      log.warn('run-daily-sync', '已有 sync 在執行，拒絕', syncLock.lockStatus())
+    if (!tryAcquire('manual:run-daily-sync', 'run-daily-sync'))
       return res.status(409).json({ ok: false, error: '目前有同步任務正在執行中，請稍後再試' })
-    }
     try {
       const result = await runDailySync()
       return res.json({ ok: true, result })
     } catch (err) {
       log.error('run-daily-sync', err.message)
+      sendSyncAlert({ jobName: 'daily sync (manual)', error: err.message, lockedBy: 'manual:run-daily-sync', at: new Date().toISOString() })
       return res.status(500).json({ ok: false, error: err.message })
     } finally {
       syncLock.release()
@@ -225,10 +246,8 @@ app.post('/api/admin', async (req, res) => {
     const { from, to } = req.body
     if (!from || !to) return res.status(400).json({ ok: false, error: '請提供 from 與 to 日期（YYYY-MM-DD）' })
     if (from > to)    return res.status(400).json({ ok: false, error: 'from 不能晚於 to' })
-    if (!syncLock.acquire('manual:sync-range')) {
-      log.warn('sync-range', '已有 sync 在執行，拒絕', syncLock.lockStatus())
+    if (!tryAcquire('manual:sync-range', 'sync-range'))
       return res.status(409).json({ ok: false, error: '目前有同步任務正在執行中，請稍後再試' })
-    }
     try {
       const { ordersResult, redeemResult } = await syncRangeWithRedemptionCheck(from, to)
       return res.json({ ok: true, from, to, ordersResult, redeemResult })
@@ -241,10 +260,8 @@ app.post('/api/admin', async (req, res) => {
   }
 
   if (action === 'check-expired') {
-    if (!syncLock.acquire('manual:check-expired')) {
-      log.warn('check-expired', '已有 sync 在執行，拒絕', syncLock.lockStatus())
+    if (!tryAcquire('manual:check-expired', 'check-expired'))
       return res.status(409).json({ ok: false, error: '目前有同步任務正在執行中，請稍後再試' })
-    }
     try {
       const result = await checkExpiredOrders()
       return res.json({ ok: true, result })
@@ -254,6 +271,16 @@ app.post('/api/admin', async (req, res) => {
     } finally {
       syncLock.release()
     }
+  }
+
+  if (action === 'lock-status') {
+    return res.json({ ok: true, lock: syncLock.lockStatus() })
+  }
+
+  if (action === 'force-release-lock') {
+    const prev = syncLock.forceRelease()
+    log.warn('force-release-lock', '管理員強制釋放鎖', prev)
+    return res.json({ ok: true, message: '鎖已強制釋放', previousLock: prev })
   }
 
   if (action === 'send-report-b') {

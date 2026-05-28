@@ -214,4 +214,46 @@ async function diagnoseMail() {
   return result
 }
 
-module.exports = { sendCustomerNotification, sendReportA, sendReportB, diagnoseMail }
+/**
+ * 系統告警：同步任務失敗時寄給管理員
+ * @param {{ jobName: string, error: string, lockedBy: string, at: string }} opts
+ */
+async function sendSyncAlert({ jobName, error, lockedBy, at }) {
+  const subject = `【⚠️ 系統告警】同步任務失敗：${jobName}`
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
+      <h2 style="color: #dc2626;">⚠️ 同步任務執行失敗</h2>
+      <table style="border-collapse: collapse; width: 100%; font-size: 14px; margin: 16px 0;">
+        <tr style="background: #fef2f2;">
+          <td style="padding: 8px 12px; font-weight: bold; width: 30%;">任務名稱</td>
+          <td style="padding: 8px 12px;">${esc(jobName)}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; font-weight: bold;">發生時間</td>
+          <td style="padding: 8px 12px;">${esc(at)}</td>
+        </tr>
+        <tr style="background: #fef2f2;">
+          <td style="padding: 8px 12px; font-weight: bold;">觸發來源</td>
+          <td style="padding: 8px 12px;">${esc(lockedBy || '—')}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; font-weight: bold;">錯誤訊息</td>
+          <td style="padding: 8px 12px; color: #dc2626; font-family: monospace;">${esc(error)}</td>
+        </tr>
+      </table>
+      <p style="color: #6b7280; font-size: 13px; margin-top: 16px;">
+        請至 Render Dashboard 查看完整 log，並確認今日資料是否需要補跑。
+      </p>
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+      <p style="color: #9ca3af; font-size: 12px;">此信由 rezio-bridge 系統自動發送，請勿直接回覆。</p>
+    </div>
+  `
+  try {
+    await sendMail({ to: process.env.REPORT_TO, subject, html })
+  } catch (mailErr) {
+    // 告警信寄失不應蓋掉原始錯誤，只記 log
+    console.error('[mailer] sendSyncAlert 寄信失敗', mailErr.message)
+  }
+}
+
+module.exports = { sendCustomerNotification, sendReportA, sendReportB, diagnoseMail, sendSyncAlert }
